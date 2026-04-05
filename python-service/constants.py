@@ -58,6 +58,12 @@ DISCARD_KEYWORDS = [
 # Defined in CLAUDE.md: "Hard discard if match_score < 6"
 MIN_MATCH_SCORE = 6.0
 
+# Minimum acceptable annual salary in EUR. Jobs that *explicitly* post a
+# salary range below this are discarded. Jobs that omit salary are NOT
+# discarded — estimates are unreliable and should only be flagged, not used
+# for hard filtering.
+MIN_SALARY_EUR = 95_000
+
 # Number of top-scored jobs included in the daily Telegram digest.
 TOP_N_JOBS = 3
 
@@ -66,7 +72,7 @@ TOP_N_JOBS = 3
 # ---------------------------------------------------------------------------
 
 # Free-tier model — fast enough for scoring, zero cost during development.
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = "gemini-3-flash-preview"
 
 # API endpoint template — {model} and {key} filled in at call time.
 GEMINI_API_URL = (
