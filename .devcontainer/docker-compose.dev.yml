@@ -1,0 +1,51 @@
+# Dev-only compose file.
+# VS Code attaches to the `python-service` container; n8n runs alongside it
+# so the full stack is available while you develop.
+# Run via devcontainer.json — do not use this file directly with docker compose.
+
+services:
+  python-service:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    volumes:
+      # Mount the entire repo so edits in VS Code are reflected immediately
+      - ..:/workspace:cached
+      # Mount host ~/.claude so Claude Code settings and keybindings work inside the container
+      - ~/.claude:/home/vscode/.claude
+      # Map this project's memory to the path Claude expects when the workspace is at /workspace
+      - ~/.claude/projects/-home-david-projects-JobWingman:/home/vscode/.claude/projects/-workspace
+    env_file:
+      - ../.env
+    ports:
+      - "8000:8000"
+    networks:
+      - jobwingman-dev
+    # Keep the container alive for VS Code to attach to
+    command: sleep infinity
+
+  n8n:
+    image: n8nio/n8n:latest
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD}
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_TIMEZONE=Europe/Berlin
+    volumes:
+      - n8n_dev_data:/home/node/.n8n
+      - ../n8n-workflows:/workflows
+    networks:
+      - jobwingman-dev
+
+networks:
+  jobwingman-dev:
+    driver: bridge
+
+volumes:
+  n8n_dev_data:
