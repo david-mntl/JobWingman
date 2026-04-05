@@ -1,0 +1,40 @@
+services:
+  python-service:
+    build: ./python-service
+    ports:
+      - "8000:8000"
+    env_file: .env
+    volumes:
+      - ./python-service:/app
+    networks:
+      - jobwingman
+    restart: unless-stopped
+
+  n8n:
+    image: n8nio/n8n:latest
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD}
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_TIMEZONE=Europe/Berlin
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n-workflows:/workflows
+    networks:
+      - jobwingman
+    depends_on:
+      - python-service
+    restart: unless-stopped
+
+networks:
+  jobwingman:
+    driver: bridge
+
+volumes:
+  n8n_data:
