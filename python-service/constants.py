@@ -65,7 +65,7 @@ MIN_MATCH_SCORE = 6.0
 MIN_SALARY_EUR = 95_000
 
 # Number of top-scored jobs included in the daily Telegram digest.
-TOP_N_JOBS = 3
+TOP_N_JOBS = 5
 
 # ---------------------------------------------------------------------------
 # Gemini LLM
