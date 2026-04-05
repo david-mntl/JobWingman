@@ -23,8 +23,8 @@ Designed to later merge into DailyLifeMate as a module.
 ---
 
 ## Current Status
-**Active Phase: 0 — Foundation** (in progress)
-Update this line when a phase completes.
+**Active Phase: 1 — First Source + Dedup** (in progress)
+~~Phase 0 — Foundation: complete~~
 
 ---
 
