@@ -122,11 +122,18 @@ Discard if ALL of:
 
 ━━━━━━━━━━━━━━━━━━━━━
 1. [Role] — [Company] ([Location])
-⭐ 4-day week  🏠 Full remote  📈 X.X/10 match
+⭐ 4-day week  🏠 Full remote  📈 X.X/10 match  🎯 high confidence
 ⚠️ No salary posted (est. €XX-XXk)
 🟢 [top green flag]
 🔴 [top red flag if any]
-→ [View Full Analysis] [✅ Interested] [❌ Skip]
+
+📝 Role: bullet 1 · bullet 2 · bullet 3
+🏢 [3-sentence company snapshot]
+✅ Strong: skill1, skill2 | ⚡ Gaps: gap1, gap2
+🎁 benefit1, benefit2
+
+💬 [1-sentence verdict]
+🔗 View posting
 ━━━━━━━━━━━━━━━━━━━━━
 
 📊 Today: X scanned → X passed → X worth your time
