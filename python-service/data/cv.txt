@@ -1,0 +1,6 @@
+# REPLACE THIS FILE WITH YOUR FULL CV
+# This file is loaded once at service startup and injected into every LLM scoring prompt.
+# Keep it as plain text — no markdown formatting needed.
+# The more detail you provide, the better the scoring accuracy.
+
+[Paste your full CV here]

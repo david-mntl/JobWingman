@@ -1,0 +1,64 @@
+{
+  "name": "JobWingman - Phase 0",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://python-service:8000/telegram/send",
+        "sendBody": true,
+        "specifyBody": "=json",
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "jsonBody": "{\"text\": \"Hello from JobWingman! Aliveee\"}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -176,
+        -176
+      ],
+      "id": "8093a211-5547-4456-ba19-8a5601b08ba2",
+      "name": "Send first message to my Bot"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -400,
+        -176
+      ],
+      "id": "6a0e82b0-8d1c-4253-8dad-f1355cc31288",
+      "name": "JobWingman - Hello executor"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "JobWingman - Hello executor": {
+      "main": [
+        [
+          {
+            "node": "Send first message to my Bot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "cbbc5114-62c4-4ef0-bf9e-cc42d508e140",
+  "meta": {
+    "instanceId": "584383b956d61bbb36de149198387f7e95b72f2267fb24909af6d5df02883f07"
+  },
+  "id": "XXcUJsNP53KqekzQ",
+  "tags": []
+}
