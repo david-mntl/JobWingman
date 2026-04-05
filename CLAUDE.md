@@ -156,8 +156,9 @@ Bot: 🔍 Analyzing...
 | 7 | Risky Sources | LinkedIn, Welcome to the Jungle, WorkingNomads | 2-3h |
 
 **Job Sources by Phase:**
-- Phase 1: Remotive API, WeWorkRemotely RSS, RemoteOK API, HN Who's Hiring, Wellfound
-- Phase 7: LinkedIn, Welcome to the Jungle, WorkingNomads
+- Phase 1: Arbeitnow API (free, EU-focused, no auth required)
+- Phase 3+: Sources will be evaluated when we arrive — candidates include WeWorkRemotely RSS, RemoteOK API, HN Who's Hiring, Wellfound
+- Phase 7: LinkedIn, Welcome to the Jungle, WorkingNomads (risky/scraping — evaluated at that phase)
 
 ---
 
