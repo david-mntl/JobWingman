@@ -11,7 +11,8 @@
         "ms-python.vscode-pylance",
         "charliermarsh.ruff",
         "ms-azuretools.vscode-docker",
-        "humao.rest-client"
+        "humao.rest-client",
+        "anthropic.claude-code"
       ],
       "settings": {
         "python.defaultInterpreterPath": "/usr/local/bin/python",
