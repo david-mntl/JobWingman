@@ -21,23 +21,32 @@ Why JSON is extracted with a regex fallback:
 
 import json
 import os
-import re
 
 import httpx
 
-from constants import GEMINI_API_URL, GEMINI_MODEL, MIN_MATCH_SCORE, MIN_SALARY_EUR
+from constants import (
+    GEMINI_API_URL,
+    GEMINI_MAX_OUTPUT_TOKENS,
+    GEMINI_MODEL,
+    MIN_MATCH_SCORE,
+    MIN_SALARY_EUR,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
+# Validate at import time — if the key is missing, the service crashes on
+# startup with a clear message instead of silently failing 27 jobs later.
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+if not GEMINI_API_KEY:
+    raise RuntimeError(
+        "GEMINI_API_KEY is not set. Add it to .env and restart the container."
+    )
+
 # Gemini request timeout in seconds. Scoring a single job involves a large
 # prompt (CV + description); 60 s gives the model enough headroom.
 GEMINI_TIMEOUT_SECONDS = 60
-
-# Regex that matches an optional ```json fence around the model's output.
-# Group 1 captures the raw JSON whether or not the fence is present.
-_JSON_FENCE_REGEX = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```|(\{[\s\S]*\})")
 
 # ---------------------------------------------------------------------------
 # Prompt builder
@@ -177,14 +186,13 @@ async def _call_gemini(prompt: str) -> str:
       httpx.RequestError     on network failures.
       KeyError / IndexError  if the response structure is unexpected.
     """
-    api_key = os.environ["GEMINI_API_KEY"]
-    url = GEMINI_API_URL.format(model=GEMINI_MODEL, key=api_key)
+    url = GEMINI_API_URL.format(model=GEMINI_MODEL, key=GEMINI_API_KEY)
 
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
             "temperature": 0.2,  # Low temperature = consistent, structured output
-            "maxOutputTokens": 1024,
+            "maxOutputTokens": GEMINI_MAX_OUTPUT_TOKENS,
         },
     }
 
@@ -205,18 +213,55 @@ def _extract_json(raw: str) -> dict:
     Parse the model's text output into a Python dict.
 
     Gemini sometimes wraps JSON in a ```json fence even when told not to.
-    The regex strips the fence if present; otherwise it matches the bare
-    JSON object directly.
+    This function handles that by stripping the fence markers before parsing.
+
+    Strategy (in order):
+      1. Strip the opening ```json / ``` fence line if present.
+      2. Strip the closing ``` fence if present.
+      3. Try json.loads() on the cleaned text.
+      4. If that fails, fall back to extracting the substring from the first
+         '{' to the last '}' — handles cases where the model added extra
+         prose before or after the JSON.
+
+    Why not a single regex?
+      The old approach used a regex with two alternatives (fenced vs bare).
+      It broke when Gemini truncated its response (no closing ``` or }),
+      which is exactly what caused the bug. This sequential strip approach
+      is easier to debug and handles partial fences gracefully.
 
     Raises:
       ValueError  if no valid JSON object can be found in the response.
     """
-    match = _JSON_FENCE_REGEX.search(raw)
-    if not match:
-        raise ValueError(f"No JSON found in Gemini response: {raw[:200]}")
+    text = raw.strip()
 
-    json_str = match.group(1) or match.group(2)
-    return json.loads(json_str)
+    # Step 1 — strip opening fence (```json or ```)
+    if text.startswith("```"):
+        # Remove everything on the first line (the fence + optional language tag)
+        newline_pos = text.find("\n")
+        text = text[newline_pos + 1:] if newline_pos != -1 else text[3:]
+
+    # Step 2 — strip closing fence
+    if text.rstrip().endswith("```"):
+        text = text.rstrip()[:-3]
+
+    text = text.strip()
+
+    # Step 3 — try direct parse
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # Step 4 — fallback: extract from first '{' to last '}'
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end > start:
+        try:
+            return json.loads(text[start : end + 1])
+        except json.JSONDecodeError:
+            pass
+
+    raise ValueError(f"No JSON found in Gemini response: {raw[:200]}")
 
 
 # ---------------------------------------------------------------------------
@@ -260,22 +305,16 @@ async def score_jobs(jobs: list[dict], cv: str) -> list[dict]:
     a time keeps us well within that limit for typical batch sizes (10–30
     jobs after filtering).
 
-    None values from score_job (discarded jobs) are filtered out before
-    returning.
+    If any job fails to score (LLM error, network error, parse error), the
+    exception is NOT caught here — it propagates to the caller. The LLM is
+    the core of the pipeline; if it is broken, silently returning zero
+    results is worse than failing loudly with one clear error message.
     """
     results = []
     for job in jobs:
-        try:
-            result = await score_job(job, cv)
-            if result is not None:
-                results.append(result)
-        except Exception as e:
-            # A single job failing to score should not abort the whole batch.
-            # Log and continue so the remaining jobs are still processed.
-            print(
-                f"[scoring] ERROR — {job.get('title', '?')} @ "
-                f"{job.get('company', '?')} | {type(e).__name__}: {e}"
-            )
+        result = await score_job(job, cv)
+        if result is not None:
+            results.append(result)
 
     print(f"[scoring] {len(jobs)} in → {len(results)} passed scoring")
     return results

@@ -74,6 +74,12 @@ TOP_N_JOBS = 5
 # Free-tier model — fast enough for scoring, zero cost during development.
 GEMINI_MODEL = "gemini-3-flash-preview"
 
+# Maximum tokens Gemini may produce for a single scoring response. The
+# scoring JSON includes ~15 fields, some with arrays; 1024 tokens was too
+# tight and caused truncation (no closing brace → parse failure). 4096
+# gives comfortable headroom without hitting free-tier limits.
+GEMINI_MAX_OUTPUT_TOKENS = 4096
+
 # API endpoint template — {model} and {key} filled in at call time.
 GEMINI_API_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models"
@@ -91,6 +97,10 @@ DEDUP_EXPIRY_DAYS = 30
 # ---------------------------------------------------------------------------
 # Telegram
 # ---------------------------------------------------------------------------
+
+# Telegram Bot API hard limit — messages longer than this are rejected
+# with HTTP 400 "message is too long".
+TELEGRAM_MAX_MESSAGE_LENGTH = 4096
 
 # Separator line used between job cards in the digest message.
 TELEGRAM_SEPARATOR = "━━━━━━━━━━━━━━━━━━━━━"

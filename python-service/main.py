@@ -202,17 +202,41 @@ async def send_digest():
 
     If the pipeline returns zero jobs worth showing, a "nothing today"
     message is sent instead — David always gets feedback, even on dry days.
+
+    If the pipeline fails (LLM down, API key missing, network error), an
+    error message is sent to Telegram so David knows something broke —
+    no silent failures.
     """
-    # Run the pipeline
-    result = await fetch_and_score()
-    top_jobs = result["jobs"]
-    stats = result["stats"]
-
-    # Format the Telegram message
-    message = format_digest(top_jobs, stats)
-
-    # Send via the existing Telegram endpoint logic
     url = f"{TELEGRAM_API_BASE}/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+
+    try:
+        result = await fetch_and_score()
+        top_jobs = result["jobs"]
+        stats = result["stats"]
+        message = format_digest(top_jobs, stats)
+    except Exception as e:
+        # Pipeline failed — send error to Telegram so David knows immediately.
+        error_message = (
+            "🚨 <b>JobWingman pipeline failed</b>\n\n"
+            f"Error: <code>{type(e).__name__}: {e}</code>\n\n"
+            "Check the service logs for details."
+        )
+        print(f"[pipeline] FATAL — {type(e).__name__}: {e}")
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                url,
+                json={
+                    "chat_id": TELEGRAM_CHAT_ID,
+                    "text": error_message,
+                    "parse_mode": HTML_PARSE_MODE,
+                },
+            )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Pipeline failed: {type(e).__name__}: {e}",
+        )
+
+    # Send the digest
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             url,
