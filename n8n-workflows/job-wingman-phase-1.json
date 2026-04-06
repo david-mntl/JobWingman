@@ -1,0 +1,64 @@
+{
+  "name": "JobWingman - Phase 1 Daily Digest",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 7
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -400,
+        -176
+      ],
+      "id": "a1b2c3d4-1111-2222-3333-444455556666",
+      "name": "Daily 7am Trigger"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://python-service:8000/jobs/send-digest",
+        "options": {
+          "timeout": 500000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -176,
+        -176
+      ],
+      "id": "b2c3d4e5-2222-3333-4444-555566667777",
+      "name": "Run Pipeline & Send Digest"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Daily 7am Trigger": {
+      "main": [
+        [
+          {
+            "node": "Run Pipeline & Send Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "meta": {
+    "instanceId": "584383b956d61bbb36de149198387f7e95b72f2267fb24909af6d5df02883f07"
+  },
+  "tags": []
+}
