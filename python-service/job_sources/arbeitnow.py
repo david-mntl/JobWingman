@@ -38,7 +38,7 @@ from constants import RELEVANT_TITLE_KEYWORDS
 ARBEITNOW_API_URL = "https://www.arbeitnow.com/api/job-board-api"
 
 # Arbeitnow returns all jobs in one endpoint — no category param needed.
-# We filter by title keywords client-side (see sources/arbeitnow.py).
+# We filter by title keywords client-side (see job_sources/arbeitnow.py).
 ARBEITNOW_JOBS_KEY = "data"
 
 
