@@ -21,11 +21,12 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from constants import TOP_N_JOBS
-from database import clear_all_seen, is_seen, make_hash, mark_seen
-from filters import apply_hard_discard
-from scoring import score_jobs
-from sources.arbeitnow import fetch_jobs
-from telegram_formatter import format_digest
+from job_sources.arbeitnow import fetch_jobs
+from llm import GeminiClient
+from pipeline.filters import apply_hard_discard
+from pipeline.scoring import score_jobs
+from storage.database import clear_all_seen, is_seen, make_hash, mark_seen
+from telegram.formatter import format_digest
 
 CV_PATH = Path("data/cv.txt")
 TELEGRAM_API_BASE = "https://api.telegram.org"
@@ -56,6 +57,10 @@ app = FastAPI(title="JobWingman", version="0.1.0", lifespan=lifespan)
 
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
+
+# Instantiated once at startup — fails fast if GEMINI_API_KEY is missing.
+# Pass _llm_client into score_jobs so the pipeline stays provider-agnostic.
+_llm_client = GeminiClient(api_key=os.environ.get("GEMINI_API_KEY", ""))
 
 
 class TelegramMessage(BaseModel):
@@ -135,7 +140,7 @@ async def fetch_and_score():
       1. Fetch — call Arbeitnow API, get normalized + relevance-filtered jobs
       2. Dedup — skip any job already in the seen_jobs table
       3. Hard discard — drop consultant/outsourcing/on-site roles (pre-LLM)
-      4. Score — call Gemini for each surviving job, discard score < 6
+      4. Score — call LLM for each surviving job, discard score < 6
       5. Sort — highest match_score first
       6. Top N — keep only the top 3 (configurable via TOP_N_JOBS)
 
@@ -176,8 +181,8 @@ async def fetch_and_score():
     # 3. Hard discard
     filtered = apply_hard_discard(new_jobs)
 
-    # 4. Score via Gemini
-    scored = await score_jobs(filtered, cv_text)
+    # 4. Score via LLM
+    scored = await score_jobs(filtered, cv_text, _llm_client)
 
     # 5. Sort by match_score descending
     scored.sort(
