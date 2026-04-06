@@ -2,8 +2,8 @@
 JobWingman — LLM scoring module.
 
 Responsibilities:
-- Build the Gemini prompt by combining the user's CV with each job's details.
-- Call the Gemini API and parse the structured JSON scoring response.
+- Build the prompt by combining the user's CV with each job's details.
+- Call the LLM via the injected client and parse the structured JSON response.
 - Discard jobs whose match_score falls below MIN_MATCH_SCORE.
 - Return the surviving jobs, each enriched with their scoring data.
 
@@ -13,44 +13,23 @@ Why the CV is passed in rather than imported:
   (main → scoring → main). Accepting it as a parameter keeps this module
   stateless and independently testable.
 
+Why the LLM client is injected rather than imported:
+  scoring.py knows *what* to ask the model, not *which* model to use.
+  Receiving an LLMClient instance keeps the business logic decoupled from
+  any specific provider — swapping Gemini for Claude requires no changes
+  here. It also makes unit testing straightforward: pass a stub client.
+
 Why JSON is extracted with a regex fallback:
-  Gemini sometimes wraps its JSON output in a markdown code block
+  Some models wrap their JSON output in a markdown code block
   (```json ... ```). The extractor strips that wrapper before parsing so
   the response is valid regardless of whether the model adds the fence.
 """
 
 import asyncio
 import json
-import os
 
-import httpx
-
-from constants import (
-    GEMINI_API_URL,
-    GEMINI_DELAY_BETWEEN_CALLS,
-    GEMINI_MAX_OUTPUT_TOKENS,
-    GEMINI_MAX_RETRIES,
-    GEMINI_MODEL,
-    GEMINI_RETRY_BASE_DELAY,
-    MIN_MATCH_SCORE,
-    MIN_SALARY_EUR,
-)
-
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-# Validate at import time — if the key is missing, the service crashes on
-# startup with a clear message instead of silently failing 27 jobs later.
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-if not GEMINI_API_KEY:
-    raise RuntimeError(
-        "GEMINI_API_KEY is not set. Add it to .env and restart the container."
-    )
-
-# Gemini request timeout in seconds. Scoring a single job involves a large
-# prompt (CV + description); 60 s gives the model enough headroom.
-GEMINI_TIMEOUT_SECONDS = 60
+from constants import MIN_MATCH_SCORE, MIN_SALARY_EUR
+from llm import LLMClient
 
 # ---------------------------------------------------------------------------
 # Prompt builder
@@ -177,64 +156,6 @@ def _build_prompt(job: dict, cv: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Gemini API call
-# ---------------------------------------------------------------------------
-
-
-async def _call_gemini(prompt: str) -> str:
-    """
-    Send the prompt to Gemini and return the raw text response.
-
-    Retries on HTTP 429 (rate limited) with exponential backoff:
-      Retry 1 waits 10s, retry 2 waits 20s, retry 3 waits 40s.
-    After GEMINI_MAX_RETRIES attempts, the 429 propagates to the caller.
-
-    Why retry only on 429 and not on other errors:
-      429 is transient — the quota window resets and the next call succeeds.
-      Other errors (400 bad request, 401 auth, 500 upstream) are either
-      permanent or indicate a real upstream problem, and retrying would
-      waste time and tokens.
-
-    Raises:
-      httpx.HTTPStatusError  on non-2xx responses from Gemini (after retries).
-      httpx.RequestError     on network failures.
-      KeyError / IndexError  if the response structure is unexpected.
-    """
-    url = GEMINI_API_URL.format(model=GEMINI_MODEL, key=GEMINI_API_KEY)
-
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": 0.2,  # Low temperature = consistent, structured output
-            "maxOutputTokens": GEMINI_MAX_OUTPUT_TOKENS,
-        },
-    }
-
-    async with httpx.AsyncClient(timeout=GEMINI_TIMEOUT_SECONDS) as client:
-        for attempt in range(GEMINI_MAX_RETRIES + 1):
-            response = await client.post(url, json=payload)
-
-            if response.status_code != 429:  # Rate limited
-                response.raise_for_status()
-                print(response.json())
-                return response.json()["candidates"][0]["content"]["parts"][0]["text"]
-
-            # 429 — rate limited. Back off and retry unless we're out of attempts.
-            if attempt >= GEMINI_MAX_RETRIES:
-                response.raise_for_status()  # raises HTTPStatusError with the 429
-
-            wait = GEMINI_RETRY_BASE_DELAY * (2**attempt)
-            print(
-                f"[scoring] 429 rate-limited — retry {attempt + 1}/"
-                f"{GEMINI_MAX_RETRIES} after {wait}s"
-            )
-            await asyncio.sleep(wait)
-
-    # Unreachable: the loop either returns on success or raises on final 429.
-    raise RuntimeError("unreachable")
-
-
-# ---------------------------------------------------------------------------
 # JSON extractor
 # ---------------------------------------------------------------------------
 
@@ -253,13 +174,12 @@ def _extract_json(raw: str) -> dict:
       ValueError  if no valid JSON object can be found in the response.
     """
     text = raw.strip()
-    # try direct parse
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
 
-    # Step fallback: extract from first '{' to last '}'
+    # Fallback: extract from first '{' to last '}'
     start = text.find("{")
     end = text.rfind("}")
     if start != -1 and end > start:
@@ -268,7 +188,7 @@ def _extract_json(raw: str) -> dict:
         except json.JSONDecodeError:
             pass
 
-    raise ValueError(f"No JSON found in Gemini response: {raw[:200]}")
+    raise ValueError(f"No JSON found in model response: {raw[:200]}")
 
 
 # ---------------------------------------------------------------------------
@@ -276,7 +196,7 @@ def _extract_json(raw: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-async def score_job(job: dict, cv: str) -> dict | None:
+async def score_job(job: dict, cv: str, llm_client: LLMClient) -> dict | None:
     """
     Score a single job and return the enriched job dict, or None if discarded.
 
@@ -284,12 +204,17 @@ async def score_job(job: dict, cv: str) -> dict | None:
     Returns None if match_score < MIN_MATCH_SCORE — the caller should
     filter out None values from the results list.
 
+    Args:
+        job:        Normalised job dict from the source fetcher.
+        cv:         The user's full CV text, injected into the prompt.
+        llm_client: Provider-agnostic LLM client used to call the model.
+
     Raises:
-      httpx.HTTPStatusError / httpx.RequestError  on Gemini API failures.
+      httpx.HTTPStatusError / httpx.RequestError  on LLM API failures.
       ValueError                                  if the response is unparseable.
     """
     prompt = _build_prompt(job, cv)
-    raw = await _call_gemini(prompt)
+    raw = await llm_client.generate(prompt)
     scoring = _extract_json(raw)
 
     match_score = float(scoring.get("match_score", 0))
@@ -303,28 +228,35 @@ async def score_job(job: dict, cv: str) -> dict | None:
     return {**job, "scoring": scoring}
 
 
-async def score_jobs(jobs: list[dict], cv: str) -> list[dict]:
+async def score_jobs(
+    jobs: list[dict], cv: str, llm_client: LLMClient
+) -> list[dict]:
     """
     Score a list of jobs sequentially and return only those that pass.
 
-    Sequential (not concurrent) to respect Gemini free-tier rate limits.
-    Gemini flash free tier allows 15 requests/minute; a fixed delay of
-    GEMINI_DELAY_BETWEEN_CALLS between jobs keeps us comfortably under
-    the limit. Retries on 429 are handled inside _call_gemini().
+    Sequential (not concurrent) to respect the LLM client's rate limit.
+    The client advertises its required inter-request delay via the
+    delay_between_calls property; score_jobs honours it without needing
+    to know which provider is in use.
 
     The delay is applied *between* calls (not after the last one) to avoid
     an unnecessary trailing sleep when the batch is done.
 
     If any job fails to score (LLM error, network error, parse error), the
     exception is NOT caught here — it propagates to the caller. The LLM is
-    the core of the pipeline; if it is broken, silently returning zero
-    results is worse than failing loudly with one clear error message.
+    the core of the pipeline; silently returning zero results is worse than
+    failing loudly with one clear error message.
+
+    Args:
+        jobs:       List of normalised job dicts to score.
+        cv:         The user's full CV text, injected into each prompt.
+        llm_client: Provider-agnostic LLM client used to call the model.
     """
     results = []
     for i, job in enumerate(jobs):
         if i > 0:
-            await asyncio.sleep(GEMINI_DELAY_BETWEEN_CALLS)
-        result = await score_job(job, cv)
+            await asyncio.sleep(llm_client.delay_between_calls)
+        result = await score_job(job, cv, llm_client)
         if result is not None:
             results.append(result)
 
