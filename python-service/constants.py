@@ -72,8 +72,6 @@ TOP_N_JOBS = 5
 # Gemini LLM
 # ---------------------------------------------------------------------------
 
-# Free-tier model — fast enough for scoring, zero cost during development.
-GEMINI_MODEL = "gemini-3-flash-preview"
 
 # Maximum tokens Gemini may produce for a single scoring response. The
 # scoring JSON includes ~15 fields, some with arrays; 1024 tokens was too
@@ -92,6 +90,12 @@ GEMINI_MAX_RETRIES = 3
 # Base delay in seconds for exponential backoff on 429 responses.
 # Retry 1 waits 10s, retry 2 waits 20s, retry 3 waits 40s.
 GEMINI_RETRY_BASE_DELAY = 10
+
+GEMINI_MODEL = "gemini-3.1-flash-lite-preview"
+
+# Per-request HTTP timeout in seconds. Scoring a single job involves a large
+# prompt (CV + description); 60s gives the model enough headroom.
+GEMINI_TIMEOUT_SECONDS = 60
 
 # API endpoint template — {model} and {key} filled in at call time.
 GEMINI_API_URL = (
