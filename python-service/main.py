@@ -229,7 +229,7 @@ async def send_digest():
         stats = result["stats"]
         messages = format_digest(top_jobs, stats)
     except Exception as e:
-        # Pipeline failed — send error to Telegram so David knows immediately.
+        # Pipeline failed — send error to Telegram.
         error_message = (
             "🚨 <b>JobWingman pipeline failed</b>\n\n"
             f"Error: <code>{type(e).__name__}: {e}</code>\n\n"

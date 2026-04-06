@@ -27,11 +27,11 @@ RELEVANT_TITLE_KEYWORDS = [
     "engineer",
     "developer",
     "software",
-    "senior",
     "platform",
     "infrastructure",
     "agent",
     "agentic",
+    "ki",
 ]
 
 # ---------------------------------------------------------------------------
@@ -48,6 +48,7 @@ DISCARD_KEYWORDS = [
     "body leasing",
     "on-site only",
     "relocation required",
+    "teilzeit",
 ]
 
 # ---------------------------------------------------------------------------
@@ -79,6 +80,18 @@ GEMINI_MODEL = "gemini-3-flash-preview"
 # tight and caused truncation (no closing brace → parse failure). 4096
 # gives comfortable headroom without hitting free-tier limits.
 GEMINI_MAX_OUTPUT_TOKENS = 4096
+
+# Delay in seconds between consecutive Gemini scoring calls. Gemini free
+# tier allows 15 requests/minute — a 5-second gap means max 12 req/min,
+# staying safely under the limit even with retries.
+GEMINI_DELAY_BETWEEN_CALLS = 5
+
+# Number of retry attempts when Gemini returns 429 (rate limited).
+GEMINI_MAX_RETRIES = 3
+
+# Base delay in seconds for exponential backoff on 429 responses.
+# Retry 1 waits 10s, retry 2 waits 20s, retry 3 waits 40s.
+GEMINI_RETRY_BASE_DELAY = 10
 
 # API endpoint template — {model} and {key} filled in at call time.
 GEMINI_API_URL = (

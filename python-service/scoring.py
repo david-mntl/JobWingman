@@ -19,6 +19,7 @@ Why JSON is extracted with a regex fallback:
   the response is valid regardless of whether the model adds the fence.
 """
 
+import asyncio
 import json
 import os
 
@@ -26,8 +27,11 @@ import httpx
 
 from constants import (
     GEMINI_API_URL,
+    GEMINI_DELAY_BETWEEN_CALLS,
     GEMINI_MAX_OUTPUT_TOKENS,
+    GEMINI_MAX_RETRIES,
     GEMINI_MODEL,
+    GEMINI_RETRY_BASE_DELAY,
     MIN_MATCH_SCORE,
     MIN_SALARY_EUR,
 )
@@ -181,8 +185,18 @@ async def _call_gemini(prompt: str) -> str:
     """
     Send the prompt to Gemini and return the raw text response.
 
+    Retries on HTTP 429 (rate limited) with exponential backoff:
+      Retry 1 waits 10s, retry 2 waits 20s, retry 3 waits 40s.
+    After GEMINI_MAX_RETRIES attempts, the 429 propagates to the caller.
+
+    Why retry only on 429 and not on other errors:
+      429 is transient — the quota window resets and the next call succeeds.
+      Other errors (400 bad request, 401 auth, 500 upstream) are either
+      permanent or indicate a real upstream problem, and retrying would
+      waste time and tokens.
+
     Raises:
-      httpx.HTTPStatusError  on non-2xx responses from Gemini.
+      httpx.HTTPStatusError  on non-2xx responses from Gemini (after retries).
       httpx.RequestError     on network failures.
       KeyError / IndexError  if the response structure is unexpected.
     """
@@ -197,10 +211,27 @@ async def _call_gemini(prompt: str) -> str:
     }
 
     async with httpx.AsyncClient(timeout=GEMINI_TIMEOUT_SECONDS) as client:
-        response = await client.post(url, json=payload)
-        response.raise_for_status()
+        for attempt in range(GEMINI_MAX_RETRIES + 1):
+            response = await client.post(url, json=payload)
 
-    return response.json()["candidates"][0]["content"]["parts"][0]["text"]
+            if response.status_code != 429:  # Rate limited
+                response.raise_for_status()
+                print(response.json())
+                return response.json()["candidates"][0]["content"]["parts"][0]["text"]
+
+            # 429 — rate limited. Back off and retry unless we're out of attempts.
+            if attempt >= GEMINI_MAX_RETRIES:
+                response.raise_for_status()  # raises HTTPStatusError with the 429
+
+            wait = GEMINI_RETRY_BASE_DELAY * (2**attempt)
+            print(
+                f"[scoring] 429 rate-limited — retry {attempt + 1}/"
+                f"{GEMINI_MAX_RETRIES} after {wait}s"
+            )
+            await asyncio.sleep(wait)
+
+    # Unreachable: the loop either returns on success or raises on final 429.
+    raise RuntimeError("unreachable")
 
 
 # ---------------------------------------------------------------------------
@@ -212,47 +243,23 @@ def _extract_json(raw: str) -> dict:
     """
     Parse the model's text output into a Python dict.
 
-    Gemini sometimes wraps JSON in a ```json fence even when told not to.
-    This function handles that by stripping the fence markers before parsing.
-
     Strategy (in order):
-      1. Strip the opening ```json / ``` fence line if present.
-      2. Strip the closing ``` fence if present.
-      3. Try json.loads() on the cleaned text.
-      4. If that fails, fall back to extracting the substring from the first
+      1. Try json.loads() on the cleaned text.
+      2. If that fails, fall back to extracting the substring from the first
          '{' to the last '}' — handles cases where the model added extra
          prose before or after the JSON.
-
-    Why not a single regex?
-      The old approach used a regex with two alternatives (fenced vs bare).
-      It broke when Gemini truncated its response (no closing ``` or }),
-      which is exactly what caused the bug. This sequential strip approach
-      is easier to debug and handles partial fences gracefully.
 
     Raises:
       ValueError  if no valid JSON object can be found in the response.
     """
     text = raw.strip()
-
-    # Step 1 — strip opening fence (```json or ```)
-    if text.startswith("```"):
-        # Remove everything on the first line (the fence + optional language tag)
-        newline_pos = text.find("\n")
-        text = text[newline_pos + 1:] if newline_pos != -1 else text[3:]
-
-    # Step 2 — strip closing fence
-    if text.rstrip().endswith("```"):
-        text = text.rstrip()[:-3]
-
-    text = text.strip()
-
-    # Step 3 — try direct parse
+    # try direct parse
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
 
-    # Step 4 — fallback: extract from first '{' to last '}'
+    # Step fallback: extract from first '{' to last '}'
     start = text.find("{")
     end = text.rfind("}")
     if start != -1 and end > start:
@@ -301,9 +308,12 @@ async def score_jobs(jobs: list[dict], cv: str) -> list[dict]:
     Score a list of jobs sequentially and return only those that pass.
 
     Sequential (not concurrent) to respect Gemini free-tier rate limits.
-    Gemini flash free tier allows 15 requests/minute — running jobs one at
-    a time keeps us well within that limit for typical batch sizes (10–30
-    jobs after filtering).
+    Gemini flash free tier allows 15 requests/minute; a fixed delay of
+    GEMINI_DELAY_BETWEEN_CALLS between jobs keeps us comfortably under
+    the limit. Retries on 429 are handled inside _call_gemini().
+
+    The delay is applied *between* calls (not after the last one) to avoid
+    an unnecessary trailing sleep when the batch is done.
 
     If any job fails to score (LLM error, network error, parse error), the
     exception is NOT caught here — it propagates to the caller. The LLM is
@@ -311,7 +321,9 @@ async def score_jobs(jobs: list[dict], cv: str) -> list[dict]:
     results is worse than failing loudly with one clear error message.
     """
     results = []
-    for job in jobs:
+    for i, job in enumerate(jobs):
+        if i > 0:
+            await asyncio.sleep(GEMINI_DELAY_BETWEEN_CALLS)
         result = await score_job(job, cv)
         if result is not None:
             results.append(result)
