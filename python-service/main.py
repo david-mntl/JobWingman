@@ -227,7 +227,7 @@ async def send_digest():
         result = await fetch_and_score()
         top_jobs = result["jobs"]
         stats = result["stats"]
-        message = format_digest(top_jobs, stats)
+        messages = format_digest(top_jobs, stats)
     except Exception as e:
         # Pipeline failed — send error to Telegram so David knows immediately.
         error_message = (
@@ -250,17 +250,19 @@ async def send_digest():
             detail=f"Pipeline failed: {type(e).__name__}: {e}",
         )
 
-    # Send the digest
+    # Send the digest — may be multiple messages if the content exceeds
+    # Telegram's 4096-character limit per message.
     async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            url,
-            json={
-                "chat_id": TELEGRAM_CHAT_ID,
-                "text": message,
-                "parse_mode": HTML_PARSE_MODE,
-            },
-        )
-    if resp.status_code != 200:
-        raise HTTPException(status_code=502, detail=resp.text)
+        for message in messages:
+            resp = await client.post(
+                url,
+                json={
+                    "chat_id": TELEGRAM_CHAT_ID,
+                    "text": message,
+                    "parse_mode": HTML_PARSE_MODE,
+                },
+            )
+            if resp.status_code != 200:
+                raise HTTPException(status_code=502, detail=resp.text)
 
     return {"ok": True, "jobs_sent": len(top_jobs), "stats": stats}

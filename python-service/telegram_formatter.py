@@ -21,7 +21,7 @@ Why plain text with HTML parse mode:
   escaping.
 """
 
-from constants import TELEGRAM_SEPARATOR
+from constants import TELEGRAM_MAX_MESSAGE_LENGTH, TELEGRAM_SEPARATOR
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -170,37 +170,60 @@ def _format_card(index: int, job: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
-def format_digest(jobs: list[dict], stats: dict) -> str:
+def format_digest(jobs: list[dict], stats: dict) -> list[str]:
     """
-    Format the full Telegram digest message from scored jobs and stats.
+    Format the Telegram digest as a list of message strings.
 
-    Returns a ready-to-send string using Telegram HTML parse mode.
+    Returns a list instead of a single string because the Telegram Bot API
+    rejects messages longer than 4096 characters. Each message in the
+    returned list is guaranteed to be within that limit.
 
-    If the jobs list is empty, returns a friendly "nothing today" message
-    so David always gets feedback — silence is confusing.
+    Splitting strategy:
+      - The header goes into the first message.
+      - Job cards are appended one at a time. When adding the next card
+        would exceed the limit, a new message is started.
+      - The stats footer is appended to the last message (or becomes its
+        own message if it doesn't fit).
 
-    The stats footer shows the full pipeline funnel so David knows how
-    selective the scoring was on any given day.
+    If the jobs list is empty, returns a single "nothing today" message.
     """
     if not jobs:
-        return NO_JOBS_MESSAGE
+        return [NO_JOBS_MESSAGE]
 
-    # Header
     count = len(jobs)
     header = f"{EMOJI_ROBOT} Good morning David — {count} new job{'s' if count != 1 else ''} worth your attention\n"
 
-    # Job cards
-    cards = []
-    for i, job in enumerate(jobs, start=1):
-        cards.append(TELEGRAM_SEPARATOR)
-        cards.append(_format_card(i, job))
-
-    cards.append(TELEGRAM_SEPARATOR)
-
-    # Stats footer
+    # Stats footer — built once, appended at the end
     fetched = stats.get("fetched", 0)
     after_filter = stats.get("after_filter", 0)
     delivered = stats.get("delivered", 0)
     footer = f"\n{EMOJI_STATS} Today: {fetched} scanned → {after_filter} passed → {delivered} worth your time"
 
-    return header + "\n".join(cards) + footer
+    # Build individual card blocks (separator + card text)
+    card_blocks = []
+    for i, job in enumerate(jobs, start=1):
+        block = f"{TELEGRAM_SEPARATOR}\n{_format_card(i, job)}"
+        card_blocks.append(block)
+
+    # Pack cards into messages that fit within the Telegram limit
+    messages: list[str] = []
+    current = header
+
+    for block in card_blocks:
+        # +1 for the newline that joins current and block
+        if len(current) + 1 + len(block) > TELEGRAM_MAX_MESSAGE_LENGTH:
+            messages.append(current)
+            current = block
+        else:
+            current = current + "\n" + block
+
+    # Append closing separator + footer to the last chunk
+    closing = f"\n{TELEGRAM_SEPARATOR}{footer}"
+    if len(current) + len(closing) > TELEGRAM_MAX_MESSAGE_LENGTH:
+        messages.append(current)
+        messages.append(f"{TELEGRAM_SEPARATOR}{footer}")
+    else:
+        current += closing
+        messages.append(current)
+
+    return messages
