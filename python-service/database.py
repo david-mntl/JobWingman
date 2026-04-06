@@ -128,6 +128,20 @@ def is_seen(job_hash: str) -> bool:
     return row is not None
 
 
+def clear_all_seen() -> int:
+    """
+    Delete every row from seen_jobs and return the number of rows removed.
+
+    Used during development to reset the dedup state so the pipeline
+    re-processes all jobs from scratch. Exposed via DELETE /jobs/clear-db.
+    """
+    cursor = _conn.execute("SELECT COUNT(*) FROM seen_jobs")
+    count = cursor.fetchone()[0]
+    _conn.execute("DELETE FROM seen_jobs")
+    _conn.commit()
+    return count
+
+
 def mark_seen(job_hash: str, title: str, company: str, source: str) -> None:
     """
     Insert a new seen_jobs record with a 30-day expiry.

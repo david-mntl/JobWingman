@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from constants import TOP_N_JOBS
-from database import is_seen, make_hash, mark_seen
+from database import clear_all_seen, is_seen, make_hash, mark_seen
 from filters import apply_hard_discard
 from scoring import score_jobs
 from sources.arbeitnow import fetch_jobs
@@ -106,6 +106,20 @@ async def send_telegram(msg: TelegramMessage):
 # ---------------------------------------------------------------------------
 # Phase 1 — pipeline endpoints
 # ---------------------------------------------------------------------------
+
+
+@app.delete("/jobs/clear-db")
+async def clear_db():
+    """
+    Delete all rows from the seen_jobs table.
+
+    Development helper — resets the dedup state so the next pipeline run
+    re-processes every job as if it were new. Not called by n8n; intended
+    for manual use via curl or the Swagger UI.
+    """
+    deleted = clear_all_seen()
+    print(f"[db] Cleared {deleted} rows from seen_jobs")
+    return {"ok": True, "deleted": deleted}
 
 
 @app.post("/jobs/fetch-and-score")
