@@ -28,10 +28,10 @@
   // Start the FastAPI server when the container opens
   "postStartCommand": "cd /workspace/python-service && uvicorn main:app --host 0.0.0.0 --port 8000 --reload",
 
-  "forwardPorts": [8000, 5678],
+  "forwardPorts": [8001, 5679],
   "portsAttributes": {
-    "8000": { "label": "FastAPI", "onAutoForward": "notify" },
-    "5678": { "label": "n8n", "onAutoForward": "notify" }
+    "8001": { "label": "FastAPI", "onAutoForward": "notify" },
+    "5679": { "label": "n8n", "onAutoForward": "notify" }
   },
 
   "remoteUser": "vscode"
