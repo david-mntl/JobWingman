@@ -23,6 +23,7 @@ Why httpx and not requests:
 import httpx
 
 from constants import RELEVANT_TITLE_KEYWORDS
+from models.job import Job
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -47,37 +48,27 @@ ARBEITNOW_JOBS_KEY = "data"
 # ---------------------------------------------------------------------------
 
 
-def _normalize(raw: dict) -> dict:
+def _normalize(raw: dict) -> Job:
     """
-    Convert a raw Arbeitnow job object into the canonical job dict shape.
+    Convert a raw Arbeitnow job object into a canonical Job instance.
 
     All downstream modules depend on this shape. Centralizing the field
     mapping here means that if Arbeitnow changes a field name, only this
     function needs updating — nothing else in the pipeline breaks.
-
-    Canonical job dict fields:
-        title       str   Job title
-        company     str   Company name
-        location    str   Location string as provided by the source
-        description str   Full job description (plain text)
-        url         str   Direct link to the job posting
-        source      str   Identifier for the originating source
-        tags        list  List of tag strings provided by the source
-        remote      bool  Whether the role is explicitly flagged as remote
     """
-    return {
-        "title": raw.get("title", "").strip(),
-        "company": raw.get("company_name", "").strip(),
-        "location": raw.get("location", "").strip(),
-        "description": raw.get("description", "").strip(),
-        "url": raw.get("url", "").strip(),
-        "source": "arbeitnow",
-        "tags": raw.get("tags", []),
-        "remote": raw.get("remote", False),
-    }
+    return Job(
+        title=raw.get("title", "").strip(),
+        company=raw.get("company_name", "").strip(),
+        location=raw.get("location", "").strip(),
+        description=raw.get("description", "").strip(),
+        url=raw.get("url", "").strip(),
+        source="arbeitnow",
+        tags=raw.get("tags", []),
+        remote=raw.get("remote", False),
+    )
 
 
-def _is_relevant(job: dict) -> bool:
+def _is_relevant(job: Job) -> bool:
     """
     Return True if the job title contains at least one relevant keyword.
 
@@ -92,7 +83,7 @@ def _is_relevant(job: dict) -> bool:
 
     Case-insensitive match — the keyword list is all lowercase.
     """
-    title_lower = job["title"].lower()
+    title_lower = job.title.lower()
     return any(kw in title_lower for kw in RELEVANT_TITLE_KEYWORDS)
 
 
@@ -101,7 +92,7 @@ def _is_relevant(job: dict) -> bool:
 # ---------------------------------------------------------------------------
 
 
-async def fetch_jobs() -> list[dict]:
+async def fetch_jobs() -> list[Job]:
     """
     Fetch and return normalized, relevance-filtered jobs from Arbeitnow.
 
