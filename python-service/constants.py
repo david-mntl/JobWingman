@@ -100,6 +100,15 @@ GEMINI_MAX_RETRIES = 3
 # Retry 1 waits 10s, retry 2 waits 20s, retry 3 waits 40s.
 GEMINI_RETRY_BASE_DELAY = 10
 
+# Number of retry attempts when Gemini returns 503 (service unavailable /
+# high demand). Kept separate from 429 so both counters are independent.
+GEMINI_503_MAX_RETRIES = 5
+
+# Base delay in seconds for exponential backoff on 503 responses.
+# Retry 1 waits 3s, retry 2 waits 6s, … retry 5 waits 48s.
+# Shorter than the 429 base because 503 spikes tend to clear quickly.
+GEMINI_503_RETRY_BASE_DELAY = 3
+
 GEMINI_MODEL = "gemini-3.1-flash-lite-preview"
 
 # Per-request HTTP timeout in seconds. Scoring a single job involves a large
