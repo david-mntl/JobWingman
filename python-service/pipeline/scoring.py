@@ -30,6 +30,7 @@ import json
 
 from constants import MIN_MATCH_SCORE, MIN_SALARY_EUR
 from llm import LLMClient
+from models.job import Job
 
 # ---------------------------------------------------------------------------
 # Prompt builder
@@ -141,17 +142,17 @@ outside the JSON, no explanation. Use exactly this structure:
 """
 
 
-def _build_prompt(job: dict, cv: str) -> str:
+def _build_prompt(job: Job, cv: str) -> str:
     return _SCORING_PROMPT_TEMPLATE.format(
         cv=cv,
         min_salary=MIN_SALARY_EUR,
         min_salary_k=MIN_SALARY_EUR // 1000,
-        title=job.get("title", ""),
-        company=job.get("company", ""),
-        location=job.get("location", ""),
-        remote="Yes" if job.get("remote") else "Not specified",
-        tags=", ".join(job.get("tags", [])) or "none",
-        description=job.get("description", ""),
+        title=job.title,
+        company=job.company,
+        location=job.location,
+        remote="Yes" if job.remote else "Not specified",
+        tags=", ".join(job.tags) or "none",
+        description=job.description,
     )
 
 
@@ -196,16 +197,16 @@ def _extract_json(raw: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-async def score_job(job: dict, cv: str, llm_client: LLMClient) -> dict | None:
+async def score_job(job: Job, cv: str, llm_client: LLMClient) -> Job | None:
     """
-    Score a single job and return the enriched job dict, or None if discarded.
+    Score a single job and return the enriched Job, or None if discarded.
 
-    Attaches the full scoring result to the job dict under the key "scoring".
-    Returns None if match_score < MIN_MATCH_SCORE — the caller should
-    filter out None values from the results list.
+    Attaches the full LLM scoring result to job.scoring and returns the same
+    Job instance. Returns None if match_score < MIN_MATCH_SCORE — the caller
+    should filter out None values from the results list.
 
     Args:
-        job:        Normalised job dict from the source fetcher.
+        job:        Normalised Job instance from the source fetcher.
         cv:         The user's full CV text, injected into the prompt.
         llm_client: Provider-agnostic LLM client used to call the model.
 
@@ -218,19 +219,18 @@ async def score_job(job: dict, cv: str, llm_client: LLMClient) -> dict | None:
     scoring = _extract_json(raw)
 
     match_score = float(scoring.get("match_score", 0))
-    job_label = f"{job.get('title', '?')} @ {job.get('company', '?')}"
+    job_label = f"{job.title} @ {job.company}"
 
     if match_score < MIN_MATCH_SCORE:
         print(f"[scoring] DISCARD — {job_label} | score: {match_score}")
         return None
 
+    job.scoring = scoring
     print(f"[scoring] PASS — {job_label} | score: {match_score}")
-    return {**job, "scoring": scoring}
+    return job
 
 
-async def score_jobs(
-    jobs: list[dict], cv: str, llm_client: LLMClient
-) -> list[dict]:
+async def score_jobs(jobs: list[Job], cv: str, llm_client: LLMClient) -> list[Job]:
     """
     Score a list of jobs sequentially and return only those that pass.
 

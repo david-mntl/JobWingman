@@ -20,6 +20,7 @@ Why a dedicated module and not inline in the endpoint:
 """
 
 from constants import DISCARD_KEYWORDS
+from models.job import Job
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -43,6 +44,7 @@ ONSITE_SIGNALS = [
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _contains_any(text: str, keywords: list[str]) -> bool:
     """
     Return True if the lowercased text contains any keyword from the list.
@@ -53,7 +55,7 @@ def _contains_any(text: str, keywords: list[str]) -> bool:
     return any(kw in text_lower for kw in keywords)
 
 
-def _is_hard_discard(job: dict) -> tuple[bool, str]:
+def _is_hard_discard(job: Job) -> tuple[bool, str]:
     """
     Apply the hard-discard rules from CLAUDE.md and return (discard, reason).
 
@@ -66,13 +68,13 @@ def _is_hard_discard(job: dict) -> tuple[bool, str]:
     Returning the reason alongside the bool makes the caller's log line
     useful for debugging without requiring a second call into this function.
     """
-    searchable = f"{job.get('title', '')} {job.get('description', '')}"
+    searchable = f"{job.title} {job.description}"
 
     if _contains_any(searchable, DISCARD_KEYWORDS):
         matched = next(kw for kw in DISCARD_KEYWORDS if kw in searchable.lower())
         return True, f"discard keyword: '{matched}'"
 
-    location_and_desc = f"{job.get('location', '')} {job.get('description', '')}"
+    location_and_desc = f"{job.location} {job.description}"
     if _contains_any(location_and_desc, ONSITE_SIGNALS):
         matched = next(kw for kw in ONSITE_SIGNALS if kw in location_and_desc.lower())
         return True, f"on-site signal: '{matched}'"
@@ -84,7 +86,8 @@ def _is_hard_discard(job: dict) -> tuple[bool, str]:
 # Public API
 # ---------------------------------------------------------------------------
 
-def apply_hard_discard(jobs: list[dict]) -> list[dict]:
+
+def apply_hard_discard(jobs: list[Job]) -> list[Job]:
     """
     Filter out jobs that match any hard-discard rule.
 
@@ -97,10 +100,7 @@ def apply_hard_discard(jobs: list[dict]) -> list[dict]:
     for job in jobs:
         discard, reason = _is_hard_discard(job)
         if discard:
-            print(
-                f"[filter] DISCARD — {job.get('title', '?')} @ "
-                f"{job.get('company', '?')} | reason: {reason}"
-            )
+            print(f"[filter] DISCARD — {job.title} @ {job.company} | reason: {reason}")
         else:
             kept.append(job)
 

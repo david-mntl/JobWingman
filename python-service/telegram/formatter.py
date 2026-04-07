@@ -22,6 +22,7 @@ Why plain text with HTML parse mode:
 """
 
 from constants import TELEGRAM_MAX_MESSAGE_LENGTH, TELEGRAM_SEPARATOR
+from models.job import Job
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -67,7 +68,7 @@ def _has_star_flag(green_flags: list[str]) -> bool:
     return any(flag in joined for flag in STAR_FLAGS)
 
 
-def _format_card(index: int, job: dict) -> str:
+def _format_card(index: int, job: Job) -> str:
     """
     Format a single job into a Telegram card string.
 
@@ -87,11 +88,11 @@ def _format_card(index: int, job: dict) -> str:
     Only non-empty fields are included — a job with no red flags skips
     the red flag line entirely instead of showing an empty one.
     """
-    scoring = job.get("scoring", {})
-    title = job.get("title", "Unknown Role")
-    company = job.get("company", "Unknown Company")
-    location = job.get("location", "Unknown")
-    url = job.get("url", "")
+    scoring = job.scoring or {}
+    title = job.title or "Unknown Role"
+    company = job.company or "Unknown Company"
+    location = job.location or "Unknown"
+    url = job.url
     match_score = scoring.get("match_score", 0)
     salary_signal = scoring.get("salary_signal", "")
     green_flags = scoring.get("green_flags", [])
@@ -112,7 +113,7 @@ def _format_card(index: int, job: dict) -> str:
     indicators = []
     if _has_star_flag(green_flags):
         indicators.append(f"{EMOJI_STAR} 4-day week")
-    if job.get("remote"):
+    if job.remote:
         indicators.append(f"{EMOJI_REMOTE} Full remote")
     indicators.append(f"{EMOJI_SCORE} {match_score}/10 match")
     if confidence:
@@ -160,7 +161,7 @@ def _format_card(index: int, job: dict) -> str:
 
     # Link
     if url:
-        lines.append(f"{EMOJI_LINK} <a href=\"{url}\">View posting</a>")
+        lines.append(f'{EMOJI_LINK} <a href="{url}">View posting</a>')
 
     return "\n".join(lines)
 
@@ -170,7 +171,7 @@ def _format_card(index: int, job: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
-def format_digest(jobs: list[dict], stats: dict) -> list[str]:
+def format_digest(jobs: list[Job], stats: dict) -> list[str]:
     """
     Format the Telegram digest as a list of message strings.
 
