@@ -12,6 +12,15 @@ Why a dedicated module instead of inline constants per file:
 """
 
 # ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+
+# Default log level used when the LOG_LEVEL environment variable is not set.
+# Override at runtime: LOG_LEVEL=DEBUG uvicorn main:app ...
+# Valid values (case-insensitive): DEBUG, INFO, WARNING, ERROR, CRITICAL.
+LOG_LEVEL_DEFAULT = "DEBUG"
+
+# ---------------------------------------------------------------------------
 # Relevance filter keywords
 # ---------------------------------------------------------------------------
 
@@ -66,7 +75,7 @@ MIN_MATCH_SCORE = 6.0
 MIN_SALARY_EUR = 95_000
 
 # Number of top-scored jobs included in the daily Telegram digest.
-TOP_N_JOBS = 5
+TOP_N_JOBS = 10
 
 # ---------------------------------------------------------------------------
 # Gemini LLM

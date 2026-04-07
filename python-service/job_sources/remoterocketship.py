@@ -47,7 +47,10 @@ from constants import (
     REMOTEROCKETSHIP_FILTER_PARAMS,
     REMOTEROCKETSHIP_PAGES_TO_FETCH,
 )
+from logger import get_logger
 from models.job import Job
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -245,8 +248,9 @@ async def fetch_jobs() -> list[Job]:
     all_jobs = [job for page_jobs in pages for job in page_jobs]
     relevant = [job for job in all_jobs if _is_relevant(job)]
 
-    print(
-        f"[remoterocketship] fetched {len(all_jobs)} total "
-        f"→ {len(relevant)} relevant after title filter"
+    logger.info(
+        "[remoterocketship] fetched %d total → %d relevant after title filter",
+        len(all_jobs),
+        len(relevant),
     )
     return relevant

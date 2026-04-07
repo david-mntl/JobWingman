@@ -26,13 +26,15 @@ from pathlib import Path
 import httpx
 from fastapi import FastAPI, HTTPException
 
-
 from constants import TELEGRAM_PARSE_MODE
+from logger import get_logger
 from llm import GeminiClient
 from pipeline.orchestrator import run_pipeline
 from storage.database import clear_all_seen
 from telegram.formatter import format_digest
 from models.telegram import TelegramMessage
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Configuration constants
@@ -63,9 +65,9 @@ async def lifespan(app: FastAPI):
     global cv_text
     if CV_PATH.exists():
         cv_text = CV_PATH.read_text(encoding="utf-8")
-        print(f"[startup] CV loaded — {len(cv_text)} chars")
+        logger.info("[startup] CV loaded — %d chars", len(cv_text))
     else:
-        print(f"[startup] WARNING: {CV_PATH} not found — scoring will be degraded")
+        logger.warning("[startup] %s not found — scoring will be degraded", CV_PATH)
     yield
 
 
@@ -147,7 +149,7 @@ async def clear_db():
     curl or the Swagger UI at /docs.
     """
     deleted = clear_all_seen()
-    print(f"[db] cleared {deleted} rows from seen_jobs")
+    logger.info("[db] cleared %d rows from seen_jobs", deleted)
     return {"ok": True, "deleted": deleted}
 
 
@@ -197,7 +199,7 @@ async def send_digest():
             f"Error: <code>{type(e).__name__}: {e}</code>\n\n"
             "Check the service logs for details."
         )
-        print(f"[pipeline] FATAL — {type(e).__name__}: {e}")
+        logger.error("[pipeline] FATAL — %s: %s", type(e).__name__, e)
         await _send_telegram(error_msg)
         raise HTTPException(
             status_code=500,

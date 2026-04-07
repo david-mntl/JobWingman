@@ -20,7 +20,10 @@ Why a dedicated module and not inline in the endpoint:
 """
 
 from constants import DISCARD_KEYWORDS
+from logger import get_logger
 from models.job import Job
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -100,9 +103,14 @@ def apply_hard_discard(jobs: list[Job]) -> list[Job]:
     for job in jobs:
         discard, reason = _is_hard_discard(job)
         if discard:
-            print(f"[filter] DISCARD — {job.title} @ {job.company} | reason: {reason}")
+            logger.debug(
+                "[filter] DISCARD — %s @ %s | reason: %s",
+                job.title,
+                job.company,
+                reason,
+            )
         else:
             kept.append(job)
 
-    print(f"[filter] {len(jobs)} in → {len(kept)} passed hard discard")
+    logger.info("[filter] %d in → %d passed hard discard", len(jobs), len(kept))
     return kept

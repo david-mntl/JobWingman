@@ -41,7 +41,10 @@ from constants import (
     WWR_RSS_DEVOPS_URL,
     WWR_RSS_PROGRAMMING_URL,
 )
+from logger import get_logger
 from models.job import Job
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # HTML stripper
@@ -220,8 +223,9 @@ async def fetch_jobs() -> list[Job]:
 
     relevant = [job for job in all_jobs if _is_relevant(job)]
 
-    print(
-        f"[weworkremotely] fetched {len(all_jobs)} total "
-        f"→ {len(relevant)} relevant after title filter"
+    logger.info(
+        "[weworkremotely] fetched %d total → %d relevant after title filter",
+        len(all_jobs),
+        len(relevant),
     )
     return relevant

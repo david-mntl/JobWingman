@@ -24,6 +24,7 @@ import asyncio
 from dataclasses import dataclass, field
 
 from constants import SOURCE_NAMES, TOP_N_JOBS
+from logger import get_logger
 from models.job import Job
 from job_sources.arbeitnow import fetch_jobs as fetch_arbeitnow
 from job_sources.joblyst import fetch_jobs as fetch_joblyst
@@ -34,6 +35,8 @@ from llm import LLMClient
 from pipeline.filters import apply_hard_discard
 from pipeline.scoring import score_jobs
 from storage.database import is_seen, make_hash, mark_seen
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Source registry
@@ -99,6 +102,7 @@ async def run_pipeline(cv_text: str, llm_client: LLMClient) -> PipelineResult:
         PipelineResult with the top jobs and funnel statistics.
     """
     # --- Stage 1: Fetch all sources concurrently ---
+    logger.debug("Stage 1 — fetching from %d sources concurrently", len(_FETCHERS))
     raw_results = await asyncio.gather(
         *[f() for f in _FETCHERS], return_exceptions=True
     )
@@ -106,22 +110,29 @@ async def run_pipeline(cv_text: str, llm_client: LLMClient) -> PipelineResult:
     all_jobs: list[Job] = []
     for source_name, result in zip(SOURCE_NAMES, raw_results):
         if isinstance(result, Exception):
-            print(f"[fetch] {source_name} FAILED — {type(result).__name__}: {result}")
+            logger.error(
+                "[fetch] %s FAILED — %s: %s",
+                source_name,
+                type(result).__name__,
+                result,
+            )
         else:
-            print(f"[fetch] {source_name} → {len(result)} jobs")
+            logger.info("[fetch] %s → %d jobs", source_name, len(result))
             all_jobs.extend(result)
 
     fetched_count = len(all_jobs)
+    logger.debug("Stage 1 complete — %d raw jobs aggregated across all sources", fetched_count)
 
     # --- Stage 2: Dedup ---
     # Jobs are marked seen immediately after the is_seen check so that a
     # duplicate appearing later in the list (from a different source) is
     # correctly identified as seen within the same pipeline run.
+    logger.debug("Stage 2 — running dedup on %d jobs", fetched_count)
     new_jobs: list[Job] = []
     for job in all_jobs:
         job_hash = make_hash(job.title, job.company)
         if is_seen(job_hash):
-            print(f"[dedup] SKIP — {job.title} @ {job.company}")
+            logger.debug("[dedup] SKIP — %s @ %s", job.title, job.company)
             continue
         mark_seen(job_hash, job.title, job.company, job.source)
         # Attach the hash to the Job so downstream stages can reference it
@@ -129,15 +140,18 @@ async def run_pipeline(cv_text: str, llm_client: LLMClient) -> PipelineResult:
         job.hash = job_hash
         new_jobs.append(job)
 
-    print(f"[dedup] {fetched_count} in → {len(new_jobs)} new")
+    logger.info("[dedup] %d in → %d new", fetched_count, len(new_jobs))
 
     # --- Stage 3: Hard discard ---
+    logger.debug("Stage 3 — running hard discard on %d jobs", len(new_jobs))
     filtered = apply_hard_discard(new_jobs)
 
     # --- Stage 4: LLM scoring ---
+    logger.debug("Stage 4 — starting LLM scoring on %d jobs", len(filtered))
     scored = await score_jobs(filtered, cv_text, llm_client)
 
     # --- Stage 5: Sort by match_score descending ---
+    logger.debug("Stage 5 — sorting %d scored jobs by match_score", len(scored))
     scored.sort(
         key=lambda j: float((j.scoring or {}).get("match_score", 0)),
         reverse=True,
@@ -145,6 +159,7 @@ async def run_pipeline(cv_text: str, llm_client: LLMClient) -> PipelineResult:
 
     # --- Stage 6: Top N ---
     top = scored[:TOP_N_JOBS]
+    logger.debug("Stage 6 — top %d selected from %d scored jobs", len(top), len(scored))
 
     stats = {
         "fetched": fetched_count,
@@ -154,10 +169,13 @@ async def run_pipeline(cv_text: str, llm_client: LLMClient) -> PipelineResult:
         "delivered": len(top),
     }
 
-    print(
-        f"[pipeline] DONE — {fetched_count} fetched → {len(new_jobs)} new "
-        f"→ {len(filtered)} after filter → {len(scored)} scored "
-        f"→ {len(top)} delivered"
+    logger.info(
+        "[pipeline] DONE — %d fetched → %d new → %d after filter → %d scored → %d delivered",
+        fetched_count,
+        len(new_jobs),
+        len(filtered),
+        len(scored),
+        len(top),
     )
 
     return PipelineResult(jobs=top, stats=stats)

@@ -29,8 +29,11 @@ import asyncio
 import json
 
 from constants import MIN_MATCH_SCORE, MIN_SALARY_EUR
+from logger import get_logger
 from llm import LLMClient
 from models.job import Job
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Prompt builder
@@ -222,11 +225,11 @@ async def score_job(job: Job, cv: str, llm_client: LLMClient) -> Job | None:
     job_label = f"{job.title} @ {job.company}"
 
     if match_score < MIN_MATCH_SCORE:
-        print(f"[scoring] DISCARD — {job_label} | score: {match_score}")
+        logger.debug("[scoring] DISCARD — %s | score: %.1f", job_label, match_score)
         return None
 
     job.scoring = scoring
-    print(f"[scoring] PASS — {job_label} | score: {match_score}")
+    logger.debug("[scoring] PASS — %s | score: %.1f", job_label, match_score)
     return job
 
 
@@ -260,5 +263,5 @@ async def score_jobs(jobs: list[Job], cv: str, llm_client: LLMClient) -> list[Jo
         if result is not None:
             results.append(result)
 
-    print(f"[scoring] {len(jobs)} in → {len(results)} passed scoring")
+    logger.info("[scoring] %d in → %d passed scoring", len(jobs), len(results))
     return results

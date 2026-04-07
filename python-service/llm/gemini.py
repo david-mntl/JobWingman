@@ -25,8 +25,11 @@ from constants import (
     GEMINI_RETRY_BASE_DELAY,
     GEMINI_TIMEOUT_SECONDS,
 )
+from logger import get_logger
 
 from .base import LLMClient
+
+logger = get_logger(__name__)
 
 
 class GeminiClient(LLMClient):
@@ -71,7 +74,7 @@ class GeminiClient(LLMClient):
         self._max_retries = max_retries
         self._retry_base_delay = retry_base_delay
         self._timeout_seconds = timeout_seconds
-        print(f"[LLM] Using model: {self._model}")
+        logger.info("LLM client ready — model: %s", self._model)
 
     @property
     def delay_between_calls(self) -> float:
@@ -113,22 +116,68 @@ class GeminiClient(LLMClient):
 
         async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
             for attempt in range(self._max_retries + 1):
-                response = await client.post(url, json=payload)
+                try:
+                    response = await client.post(url, json=payload)
+                except httpx.TimeoutException as exc:
+                    logger.error(
+                        "Gemini request timed out after %ss (attempt %d/%d) — %s",
+                        self._timeout_seconds,
+                        attempt + 1,
+                        self._max_retries + 1,
+                        exc,
+                    )
+                    raise
+                except httpx.RequestError as exc:
+                    logger.error(
+                        "Network error calling Gemini API (attempt %d/%d) — %s: %s",
+                        attempt + 1,
+                        self._max_retries + 1,
+                        type(exc).__name__,
+                        exc,
+                    )
+                    raise
 
                 if response.status_code != 429:
+                    if not response.is_success:
+                        logger.error(
+                            "Gemini API returned HTTP %s — body: %s",
+                            response.status_code,
+                            response.text[:500],
+                        )
                     response.raise_for_status()
-                    return response.json()["candidates"][0]["content"]["parts"][0][
-                        "text"
-                    ]
+
+                    try:
+                        text = response.json()["candidates"][0]["content"]["parts"][0][
+                            "text"
+                        ]
+                    except (KeyError, IndexError) as exc:
+                        logger.error(
+                            "Unexpected Gemini response structure — %s: %s | body: %s",
+                            type(exc).__name__,
+                            exc,
+                            response.text[:500],
+                        )
+                        raise
+
+                    logger.debug(
+                        "Gemini response received — response_chars: %d", len(text)
+                    )
+                    return text
 
                 # 429 — rate limited. Back off and retry unless out of attempts.
                 if attempt >= self._max_retries:
+                    logger.error(
+                        "Gemini 429 rate-limit — exhausted all %d retries, giving up",
+                        self._max_retries,
+                    )
                     response.raise_for_status()  # raises HTTPStatusError with the 429
 
                 wait = self._retry_base_delay * (2**attempt)
-                print(
-                    f"[LLM] 429 rate-limited — retry {attempt + 1}/"
-                    f"{self._max_retries} after {wait}s"
+                logger.warning(
+                    "Gemini 429 rate-limited — retry %d/%d in %ss",
+                    attempt + 1,
+                    self._max_retries,
+                    wait,
                 )
                 await asyncio.sleep(wait)
 

@@ -23,7 +23,10 @@ Why httpx and not requests:
 import httpx
 
 from constants import RELEVANT_TITLE_KEYWORDS
+from logger import get_logger
 from models.job import Job
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -119,8 +122,9 @@ async def fetch_jobs() -> list[Job]:
     normalized = [_normalize(raw) for raw in raw_jobs]
     relevant = [job for job in normalized if _is_relevant(job)]
 
-    print(
-        f"[arbeitnow] fetched {len(raw_jobs)} total "
-        f"→ {len(relevant)} relevant after title filter"
+    logger.info(
+        "[arbeitnow] fetched %d total → %d relevant after title filter",
+        len(raw_jobs),
+        len(relevant),
     )
     return relevant

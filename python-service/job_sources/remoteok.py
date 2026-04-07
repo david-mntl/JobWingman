@@ -29,7 +29,10 @@ import html.parser
 import httpx
 
 from constants import RELEVANT_TITLE_KEYWORDS, REMOTEOK_API_URL, REMOTEOK_JOBS_OFFSET
+from logger import get_logger
 from models.job import Job
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # HTML stripper
@@ -155,8 +158,9 @@ async def fetch_jobs() -> list[Job]:
     normalized = [_normalize(raw) for raw in valid]
     relevant = [job for job in normalized if _is_relevant(job)]
 
-    print(
-        f"[remoteok] fetched {len(valid)} total "
-        f"→ {len(relevant)} relevant after title filter"
+    logger.info(
+        "[remoteok] fetched %d total → %d relevant after title filter",
+        len(valid),
+        len(relevant),
     )
     return relevant
