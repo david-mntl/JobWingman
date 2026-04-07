@@ -4,7 +4,7 @@ JobWingman — Gemini LLM client.
 Implements LLMClient for Google's Gemini generateContent API. All
 Gemini-specific concerns live here: request payload shape, API key
 authentication (URL query parameter), response parsing path, and
-HTTP 429/503 retry logic. Nothing in this file is visible to scoring.py.
+HTTP 429/503/timeout retry logic. Nothing in this file is visible to scoring.py.
 
 Why raw httpx instead of the google-generativeai SDK:
   The SDK adds a heavy dependency for what is ultimately a single POST
@@ -13,6 +13,7 @@ Why raw httpx instead of the google-generativeai SDK:
 """
 
 import asyncio
+from collections.abc import Callable
 
 import httpx
 
@@ -59,6 +60,11 @@ class GeminiClient(LLMClient):
                                 headroom for large CV + job description prompts.
     """
 
+    # Retries for ReadTimeout. Not user-configurable — 3 attempts with
+    # timeout_seconds as base delay (60 → 120 → 240s) is already generous
+    # for what should be a transient server-side hang.
+    _TIMEOUT_MAX_RETRIES = 3
+
     def __init__(
         self,
         api_key: str,
@@ -96,26 +102,30 @@ class GeminiClient(LLMClient):
 
     async def _wait_or_raise(
         self,
-        response: httpx.Response,
         attempt: int,
         max_retries: int,
         base_delay: int,
         label: str,
+        re_raise: Callable[[], None],
     ) -> None:
         """
-        Shared backoff helper for retryable HTTP errors (429, 503).
+        Shared backoff helper for retryable errors (429, 503, timeout).
 
-        If all retries are exhausted it logs the failure and calls
-        raise_for_status() to propagate the error to the caller. Otherwise
-        it logs a warning and sleeps for base_delay * 2^attempt seconds
-        before the next attempt.
+        If all retries are exhausted it logs the failure and calls re_raise()
+        to propagate the original error to the caller. Otherwise it logs a
+        warning and sleeps for base_delay * 2^attempt seconds.
+
+        Taking a re_raise callable instead of an httpx.Response lets this
+        method serve both HTTP status errors (response.raise_for_status) and
+        exceptions (a closure that re-raises the caught exception).
 
         Args:
-            response:    The failed httpx response — used for raise_for_status.
             attempt:     Zero-based retry counter for this specific error type.
             max_retries: Maximum number of retries allowed for this error type.
             base_delay:  Base seconds for exponential backoff.
             label:       Error label used in log messages.
+            re_raise:    Callable that raises the appropriate error when retries
+                         are exhausted.
         """
         if attempt >= max_retries:
             logger.error(
@@ -123,7 +133,7 @@ class GeminiClient(LLMClient):
                 label,
                 max_retries,
             )
-            response.raise_for_status()
+            re_raise()
 
         wait = base_delay * (2**attempt)
         logger.warning(
@@ -139,18 +149,19 @@ class GeminiClient(LLMClient):
         """
         Send the prompt to Gemini and return the raw text response.
 
-        Retries independently on HTTP 429 (rate limited) and HTTP 503
-        (service unavailable / high demand), each with their own counter
-        and exponential backoff via _wait_or_raise. After the respective
-        max retries are exhausted the error propagates to the caller.
+        Retries independently on HTTP 429 (rate limited), HTTP 503 (service
+        unavailable), and ReadTimeout (server accepted but went silent), each
+        with their own counter and exponential backoff via _wait_or_raise.
+        After the respective max retries are exhausted the error propagates.
 
-        Why separate counters for 429 and 503:
-          The two conditions are unrelated — 429 means the quota window is
-          full, 503 means the model is overloaded. Keeping them independent
-          avoids one error type "spending" the other's budget.
+        Why separate counters per error type:
+          Each condition is unrelated — 429 is quota, 503 is overload, timeout
+          is a server hang. Keeping them independent prevents one error type
+          from spending another's retry budget.
 
         Raises:
           httpx.HTTPStatusError  on non-2xx responses (after retries).
+          httpx.TimeoutException on timeout (after retries).
           httpx.RequestError     on network failures.
           KeyError / IndexError  if the response structure is unexpected.
         """
@@ -165,18 +176,33 @@ class GeminiClient(LLMClient):
 
         attempts_429 = 0
         attempts_503 = 0
+        attempts_timeout = 0
 
         async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
             while True:
                 try:
                     response = await client.post(url, json=payload)
                 except httpx.TimeoutException as exc:
-                    logger.error(
-                        "Gemini request timed out after %ss — %s",
+                    _exc = exc
+
+                    def _re_raise_timeout() -> None:
+                        raise _exc
+
+                    logger.warning(
+                        "Gemini timed out after %ss (attempt %d/%d)",
                         self._timeout_seconds,
-                        exc,
+                        attempts_timeout + 1,
+                        self._TIMEOUT_MAX_RETRIES + 1,
                     )
-                    raise
+                    await self._wait_or_raise(
+                        attempts_timeout,
+                        self._TIMEOUT_MAX_RETRIES,
+                        self._timeout_seconds,
+                        "timeout",
+                        re_raise=_re_raise_timeout,
+                    )
+                    attempts_timeout += 1
+                    continue
                 except httpx.RequestError as exc:
                     logger.error(
                         "Network error calling Gemini API — %s: %s",
@@ -187,22 +213,22 @@ class GeminiClient(LLMClient):
 
                 if response.status_code == 429:
                     await self._wait_or_raise(
-                        response,
                         attempts_429,
                         self._max_retries,
                         self._retry_base_delay,
                         "429 rate-limit",
+                        re_raise=response.raise_for_status,
                     )
                     attempts_429 += 1
                     continue
 
                 if response.status_code == 503:
                     await self._wait_or_raise(
-                        response,
                         attempts_503,
                         self._max_503_retries,
                         self._retry_503_base_delay,
                         "503 service unavailable",
+                        re_raise=response.raise_for_status,
                     )
                     attempts_503 += 1
                     continue
