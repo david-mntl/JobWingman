@@ -125,3 +125,93 @@ TELEGRAM_SEPARATOR = "━━━━━━━━━━━━━━━━━━━�
 # Parse mode sent to the Telegram Bot API.
 # HTML allows <b>, <i>, <a href> tags in messages.
 TELEGRAM_PARSE_MODE = "HTML"
+
+# ---------------------------------------------------------------------------
+# Source registry (Phase 3)
+# ---------------------------------------------------------------------------
+
+# Canonical source identifiers — order matches the aggregation call order in
+# the orchestrator and appears in log output. Joblyst and RemoteRocketship are
+# listed first because they carry the most relevant pre-filtered data for
+# David's profile.
+SOURCE_NAMES = [
+    "joblyst",
+    "remoterocketship",
+    "weworkremotely",
+    "remoteok",
+    "arbeitnow",
+]
+
+# ---------------------------------------------------------------------------
+# Joblyst (https://www.joblyst.tech)
+# ---------------------------------------------------------------------------
+
+# Base URL for the job listing page. Server-side filtering is supported via
+# query params — verified: unfiltered returns 2,955 jobs; with the filters
+# below it returns ~407 Engineering remote/hybrid roles.
+JOBLYST_BASE_URL = "https://www.joblyst.tech/jobs"
+
+# mode=hybrid%2Cremote is a comma-separated value that the server accepts.
+# %2C is the URL-encoded comma — both values must be present to include
+# hybrid roles (David is open to hybrid in Berlin).
+JOBLYST_MODE_FILTER = "hybrid%2Cremote"
+
+# Category filter — "Engineering" (capital E) is the correct server-side value.
+# Lowercase "engineering" returns 0 results (case-sensitive).
+JOBLYST_CATEGORY_FILTER = "Engineering"
+
+# How many pages to fetch per pipeline run. 50 jobs/page × 2 pages = 100
+# pre-filtered jobs — sufficient daily coverage without hammering the server.
+JOBLYST_PAGES_TO_FETCH = 2
+
+# ---------------------------------------------------------------------------
+# RemoteRocketship (https://www.remoterocketship.com)
+# ---------------------------------------------------------------------------
+
+# Base URL for the job listing page.
+REMOTEROCKETSHIP_BASE_URL = "https://www.remoterocketship.com"
+
+# Filter query string confirmed to be respected server-side. Using the exact
+# URL the user specified — it returns AI Engineer roles in Europe/Worldwide
+# with Berlin as city context, hybrid jobs included.
+# Verified: unfiltered returns "Sales Representative" jobs; with these params
+# it returns "AI Engineer", "Generative AI Architect", "AI Architect".
+REMOTEROCKETSHIP_FILTER_PARAMS = (
+    "sort=DateAdded"
+    "&jobTitle=AI+Engineer"
+    "&locations=Europe%2CWorldwide"
+    "&showHybridJobs=true"
+    "&locationCity=Berlin"
+)
+
+# How many pages to fetch per pipeline run. 20 jobs/page × 3 pages = 60
+# pre-filtered jobs.
+REMOTEROCKETSHIP_PAGES_TO_FETCH = 3
+
+
+# ---------------------------------------------------------------------------
+# WeWorkRemotely (https://weworkremotely.com)
+# ---------------------------------------------------------------------------
+
+# RSS feeds for the two most relevant WWR categories. Both are free,
+# unauthenticated, and return standard RSS 2.0 XML.
+# Programming covers backend, AI, and general software roles.
+# DevOps covers infrastructure and platform engineering roles.
+WWR_RSS_PROGRAMMING_URL = (
+    "https://weworkremotely.com/categories/remote-programming-jobs.rss"
+)
+WWR_RSS_DEVOPS_URL = (
+    "https://weworkremotely.com/categories/remote-devops-sysadmin-jobs.rss"
+)
+
+# ---------------------------------------------------------------------------
+# RemoteOK (https://remoteok.com)
+# ---------------------------------------------------------------------------
+
+# Public JSON API — no authentication required. Returns a JSON array where
+# the first element is a metadata object (not a job), followed by job objects.
+REMOTEOK_API_URL = "https://remoteok.com/api"
+
+# Index of the first real job in the API response array. Element 0 is
+# metadata ({"legal": "..."}); jobs start at index 1.
+REMOTEOK_JOBS_OFFSET = 1
