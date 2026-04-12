@@ -1,15 +1,22 @@
 """
-JobWingman — Python FastAPI service.
+JobWingman — FastAPI service entry point.
 
-Responsibilities:
-- Load the user's CV once at startup and keep it in memory for LLM prompts.
-- Expose HTTP endpoints that n8n workflows call to orchestrate job scoring and delivery.
-- Forward messages to Telegram via the Bot API.
+This file is the HTTP controller. Its only responsibilities are:
+- Load the CV at startup and hold it in module-level state.
+- Instantiate the LLM client once.
+- Define HTTP endpoints, map requests to pipeline/service calls, and return
+  HTTP responses.
 
-Phase 1 adds:
-- POST /jobs/fetch-and-score — runs the full pipeline:
-    fetch → relevance filter → hard discard → dedup → LLM score → return top N
-- POST /jobs/send-digest — formats scored jobs and sends the Telegram digest.
+It does NOT contain business logic. All job discovery, dedup, filtering, and
+scoring logic lives in pipeline/orchestrator.py. This separation (controller vs
+logic) means each piece can be read, tested, and modified independently.
+
+Endpoints:
+  GET  /health                — liveness check + CV load status
+  POST /telegram/send         — send an arbitrary message to Telegram
+  POST /jobs/fetch-and-score  — run the full pipeline, return top jobs as JSON
+  POST /jobs/send-digest      — run pipeline + send Telegram digest
+  DELETE /jobs/clear-db       — reset dedup state (dev helper)
 """
 
 import os
@@ -18,20 +25,31 @@ from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
 
-from constants import TOP_N_JOBS
-from job_sources.arbeitnow import fetch_jobs
+from constants import TELEGRAM_PARSE_MODE
+from logger import get_logger
 from llm import GeminiClient
-from pipeline.filters import apply_hard_discard
-from pipeline.scoring import score_jobs
-from storage.database import clear_all_seen, is_seen, make_hash, mark_seen
+from pipeline.orchestrator import run_pipeline
+from storage.database import clear_all_seen
 from telegram.formatter import format_digest
+from models.telegram import TelegramMessage
+
+logger = get_logger(__name__)
+
+# ---------------------------------------------------------------------------
+# Configuration constants
+# ---------------------------------------------------------------------------
 
 CV_PATH = Path("data/cv.txt")
 TELEGRAM_API_BASE = "https://api.telegram.org"
-HTML_PARSE_MODE = "HTML"
 
+# ---------------------------------------------------------------------------
+# Module-level state
+# ---------------------------------------------------------------------------
+
+# cv_text is loaded once at startup and passed into every pipeline run.
+# Using a module-level variable avoids re-reading the file on every request
+# and keeps the CV available to any endpoint without dependency injection.
 cv_text: str = ""
 
 
@@ -40,16 +58,16 @@ async def lifespan(app: FastAPI):
     """
     Application lifespan handler.
 
-    Runs once on startup before the server starts accepting requests.
-    Loads cv.txt into the module-level `cv_text` string so every scoring
-    prompt can inject it without hitting the filesystem on each request.
+    Loads cv.txt into module-level cv_text before the server starts accepting
+    requests. If the file is missing, the service starts anyway but logs a
+    warning — scoring will be degraded without CV content.
     """
     global cv_text
     if CV_PATH.exists():
         cv_text = CV_PATH.read_text(encoding="utf-8")
-        print(f"[startup] CV loaded — {len(cv_text)} chars")
+        logger.info("[startup] CV loaded — %d chars", len(cv_text))
     else:
-        print(f"[startup] WARNING: {CV_PATH} not found — scoring will be degraded")
+        logger.warning("[startup] %s not found — scoring will be degraded", CV_PATH)
     yield
 
 
@@ -58,24 +76,49 @@ app = FastAPI(title="JobWingman", version="0.1.0", lifespan=lifespan)
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
-# Instantiated once at startup — fails fast if GEMINI_API_KEY is missing.
-# Pass _llm_client into score_jobs so the pipeline stays provider-agnostic.
+# Instantiated once at module level — fails fast at startup if GEMINI_API_KEY
+# is missing. Passed into every pipeline run via run_pipeline().
 _llm_client = GeminiClient(api_key=os.environ.get("GEMINI_API_KEY", ""))
 
 
-class TelegramMessage(BaseModel):
-    """Payload for the /telegram/send endpoint."""
+# ---------------------------------------------------------------------------
+# Helper: send one Telegram message
+# ---------------------------------------------------------------------------
 
-    text: str
+
+async def _send_telegram(text: str) -> None:
+    """
+    Send a single message to Telegram via the Bot API.
+
+    Raises:
+      HTTPException(502)  if Telegram rejects the message.
+    """
+    url = f"{TELEGRAM_API_BASE}/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            url,
+            json={
+                "chat_id": TELEGRAM_CHAT_ID,
+                "text": text,
+                "parse_mode": TELEGRAM_PARSE_MODE,
+            },
+        )
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail=resp.text)
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
 
 
 @app.get("/health")
 async def health():
     """
-    Health check endpoint.
+    Liveness check.
 
-    Called by n8n to verify the service is up and the CV is loaded.
-    Returns cv_loaded=false as a signal that scoring will be degraded.
+    Returns cv_loaded=false when cv.txt was not found at startup — a signal
+    that scoring will produce lower-quality results.
     """
     return {
         "status": "ok",
@@ -87,30 +130,13 @@ async def health():
 @app.post("/telegram/send")
 async def send_telegram(msg: TelegramMessage):
     """
-    Send a message to Telegram via the Bot API.
+    Send an arbitrary message to Telegram.
 
     n8n workflows call this endpoint instead of integrating with Telegram
     directly, keeping all Telegram logic in one place.
-    Raises 502 if the Telegram API rejects the request.
     """
-    url = f"{TELEGRAM_API_BASE}/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            url,
-            json={
-                "chat_id": TELEGRAM_CHAT_ID,
-                "text": msg.text,
-                "parse_mode": HTML_PARSE_MODE,
-            },
-        )
-    if resp.status_code != 200:
-        raise HTTPException(status_code=502, detail=resp.text)
+    await _send_telegram(msg.text)
     return {"ok": True}
-
-
-# ---------------------------------------------------------------------------
-# Phase 1 — pipeline endpoints
-# ---------------------------------------------------------------------------
 
 
 @app.delete("/jobs/clear-db")
@@ -119,155 +145,68 @@ async def clear_db():
     Delete all rows from the seen_jobs table.
 
     Development helper — resets the dedup state so the next pipeline run
-    re-processes every job as if it were new. Not called by n8n; intended
-    for manual use via curl or the Swagger UI.
+    treats every job as new. Not called by n8n; intended for manual use via
+    curl or the Swagger UI at /docs.
     """
     deleted = clear_all_seen()
-    print(f"[db] Cleared {deleted} rows from seen_jobs")
+    logger.info("[db] cleared %d rows from seen_jobs", deleted)
     return {"ok": True, "deleted": deleted}
 
 
 @app.post("/jobs/fetch-and-score")
 async def fetch_and_score():
     """
-    Run the full job pipeline and return the top scored jobs.
+    Run the full job discovery pipeline and return the top scored jobs.
 
-    This is the main endpoint n8n calls on a schedule. The pipeline runs
-    in a single request to keep n8n's workflow minimal (just a cron trigger
-    and two HTTP calls).
+    Delegates entirely to run_pipeline() — this endpoint is a thin HTTP
+    wrapper. The pipeline fetches all sources concurrently, deduplicates,
+    filters, scores, and returns the top N jobs.
 
-    Pipeline stages (in order):
-      1. Fetch — call Arbeitnow API, get normalized + relevance-filtered jobs
-      2. Dedup — skip any job already in the seen_jobs table
-      3. Hard discard — drop consultant/outsourcing/on-site roles (pre-LLM)
-      4. Score — call LLM for each surviving job, discard score < 6
-      5. Sort — highest match_score first
-      6. Top N — keep only the top 3 (configurable via TOP_N_JOBS)
-
-    Each stage logs its input/output count so the full funnel is visible in
-    the service logs.
-
-    Error handling:
-      - Arbeitnow API failure → 502 (upstream down)
-      - Arbeitnow unreachable → 503 (network error)
-      - Individual scoring failures are caught inside score_jobs() and
-        logged — one bad job does not abort the batch.
+    Individual source failures are absorbed by the pipeline (logged, 0 jobs
+    contributed). A top-level failure (e.g. LLM client not configured) raises
+    a 500.
     """
-    # 1. Fetch
     try:
-        jobs = await fetch_jobs()
-    except httpx.HTTPStatusError as e:
+        result = await run_pipeline(cv_text, _llm_client)
+    except Exception as e:
         raise HTTPException(
-            status_code=502,
-            detail=f"Arbeitnow API error: {e.response.status_code}",
+            status_code=500,
+            detail=f"Pipeline failed: {type(e).__name__}: {e}",
         )
-    except httpx.RequestError as e:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Arbeitnow unreachable: {str(e)}",
-        )
-
-    # 2. Dedup — check against seen_jobs, then mark survivors as seen
-    new_jobs = []
-    for job in jobs:
-        job_hash = make_hash(job["title"], job["company"])
-        if is_seen(job_hash):
-            print(f"[dedup] SKIP — {job['title']} @ {job['company']}")
-            continue
-        mark_seen(job_hash, job["title"], job["company"], job["source"])
-        new_jobs.append(job)
-    print(f"[dedup] {len(jobs)} in → {len(new_jobs)} new")
-
-    # 3. Hard discard
-    filtered = apply_hard_discard(new_jobs)
-
-    # 4. Score via LLM
-    scored = await score_jobs(filtered, cv_text, _llm_client)
-
-    # 5. Sort by match_score descending
-    scored.sort(
-        key=lambda j: float(j.get("scoring", {}).get("match_score", 0)),
-        reverse=True,
-    )
-
-    # 6. Top N
-    top = scored[:TOP_N_JOBS]
-
-    print(
-        f"[pipeline] DONE — {len(jobs)} fetched → {len(new_jobs)} new "
-        f"→ {len(filtered)} after filter → {len(scored)} scored "
-        f"→ {len(top)} delivered"
-    )
-
-    return {
-        "stats": {
-            "fetched": len(jobs),
-            "new": len(new_jobs),
-            "after_filter": len(filtered),
-            "scored": len(scored),
-            "delivered": len(top),
-        },
-        "jobs": top,
-    }
+    return {"stats": result.stats, "jobs": result.jobs}
 
 
 @app.post("/jobs/send-digest")
 async def send_digest():
     """
-    Run the pipeline and send the results as a Telegram digest.
+    Run the pipeline and deliver the results as a Telegram digest.
 
-    This is a convenience endpoint that combines fetch-and-score + Telegram
-    delivery in a single call, so n8n only needs one HTTP node.
+    Combines fetch-and-score + Telegram delivery in one call so n8n only
+    needs a single HTTP node in the daily workflow.
 
-    If the pipeline returns zero jobs worth showing, a "nothing today"
-    message is sent instead — David always gets feedback, even on dry days.
+    If the pipeline returns zero jobs, a "nothing today" message is sent —
+    user always gets feedback, even on dry days.
 
-    If the pipeline fails (LLM down, API key missing, network error), an
-    error message is sent to Telegram so David knows something broke —
-    no silent failures.
+    If the pipeline itself fails, an error message is sent to Telegram and the
+    endpoint raises 500 — no silent failures.
     """
-    url = f"{TELEGRAM_API_BASE}/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-
     try:
-        result = await fetch_and_score()
-        top_jobs = result["jobs"]
-        stats = result["stats"]
-        messages = format_digest(top_jobs, stats)
+        result = await run_pipeline(cv_text, _llm_client)
+        messages = format_digest(result.jobs, result.stats)
     except Exception as e:
-        # Pipeline failed — send error to Telegram.
-        error_message = (
+        error_msg = (
             "🚨 <b>JobWingman pipeline failed</b>\n\n"
             f"Error: <code>{type(e).__name__}: {e}</code>\n\n"
             "Check the service logs for details."
         )
-        print(f"[pipeline] FATAL — {type(e).__name__}: {e}")
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                url,
-                json={
-                    "chat_id": TELEGRAM_CHAT_ID,
-                    "text": error_message,
-                    "parse_mode": HTML_PARSE_MODE,
-                },
-            )
+        logger.error("[pipeline] FATAL — %s: %s", type(e).__name__, e)
+        await _send_telegram(error_msg)
         raise HTTPException(
             status_code=500,
             detail=f"Pipeline failed: {type(e).__name__}: {e}",
         )
 
-    # Send the digest — may be multiple messages if the content exceeds
-    # Telegram's 4096-character limit per message.
-    async with httpx.AsyncClient() as client:
-        for message in messages:
-            resp = await client.post(
-                url,
-                json={
-                    "chat_id": TELEGRAM_CHAT_ID,
-                    "text": message,
-                    "parse_mode": HTML_PARSE_MODE,
-                },
-            )
-            if resp.status_code != 200:
-                raise HTTPException(status_code=502, detail=resp.text)
+    for message in messages:
+        await _send_telegram(message)
 
-    return {"ok": True, "jobs_sent": len(top_jobs), "stats": stats}
+    return {"ok": True, "jobs_sent": len(result.jobs), "stats": result.stats}

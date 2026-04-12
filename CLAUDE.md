@@ -14,7 +14,16 @@ For every file created or modified, provide a full explanation of:
 - What the file/function/class does and why it exists
 - Why a specific library was chosen over alternatives
 - Why the code is structured the way it is
-The goal is that David can read the explanation and fully understand the decision, not just accept the output.
+
+### Rule 3 — Modular code (small composable pieces)
+Write small, focused functions and classes that do one thing well and compose into larger behaviour. Avoid large monolithic functions. Each pipeline stage (fetch → filter → score → format) must be independently replaceable.
+
+
+### Rule 4 — PR summaries always use the template
+When asked for a branch summary or PR description (any phrasing: "summarise changes", "PR this branch", "what changed", etc.):
+1. Read `.github/pull_request_template.md`
+2. Fill it in based on `git log` and `git diff` against `main`
+3. Output the result as a fenced `markdown` code block — never as prose
 
 ## What We're Building
 Standalone Python project that automatically finds, scores, and delivers AI/backend engineering jobs via Telegram daily, plus manual job URL analysis on demand.
@@ -23,8 +32,11 @@ Designed to later merge into DailyLifeMate as a module.
 ---
 
 ## Current Status
-**Active Phase: 1 — First Source + Dedup** (in progress)
+**Active Phase: 3 — More Sources** (next)
 ~~Phase 0 — Foundation: complete~~
+~~Phase 1 — First Source + Dedup: complete~~
+~~Phase 2 — Full Scoring Engine: complete~~
+Phase 2.5 deferred → implement after Phase 5 (bot must be listening for button callbacks first, and labeled data needs to accumulate before metrics are meaningful)
 
 ---
 
@@ -34,7 +46,7 @@ Designed to later merge into DailyLifeMate as a module.
 | Orchestration | n8n (self-hosted, Docker) | |
 | AI logic | Python FastAPI | |
 | Storage | SQLite | Swap to PostgreSQL when merging with DailyLifeMate |
-| LLM | Gemini free tier / Claude | Decide per phase |
+| LLM | Gemini free tier |
 | Hosting | Local → Hetzner VPS | VPS after Phase 4 |
 | Interface | Telegram bot | Built from scratch |
 
@@ -46,13 +58,21 @@ JobWingman/
 ├── docker-compose.yml
 ├── .env                    # never commit — copy from .env.example
 ├── .env.example
+├── .devcontainer/          # VS Code devcontainer (docker-compose.dev.yml, Dockerfile)
 ├── python-service/
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   ├── main.py
+│   ├── constants.py        # all magic values live here — no inline literals
+│   ├── job_sources/        # one module per source (arbeitnow.py, ...)
+│   ├── llm/                # provider-agnostic LLMClient base + GeminiClient
+│   ├── pipeline/           # filters.py (hard discard), scoring.py (LLM scoring)
+│   ├── storage/            # database.py (SQLite dedup)
+│   ├── telegram/           # formatter.py (Telegram message formatting)
 │   └── data/
-│       └── cv.txt          # full CV — loaded at startup, injected into every prompt
-└── n8n-workflows/          # exported workflow JSON files
+│       ├── cv.txt          # full CV — loaded at startup, injected into every prompt
+│       └── jobwingman.db   # SQLite file — never commit
+└── n8n-workflows/          # exported workflow JSON files (phase-0, phase-1)
 ```
 
 ---
@@ -153,7 +173,7 @@ Bot: 🔍 Analyzing...
 | Phase | Name | Goal | Est. |
 |-------|------|------|------|
 | **0** | Foundation | n8n + FastAPI + Telegram "hello" message | 2-3h |
-| 1 | First Source + Dedup | Remotive API, SQLite dedup, basic scoring, top 3 in Telegram | 3-4h |
+| 1 | First Source + Dedup | Arbeitnow API, SQLite dedup, basic scoring, top 5 in Telegram | 3-4h |
 | 2 | Full Scoring Engine | Full LLM prompt, JSON output, hard discard, rich Telegram format | 3-4h |
 | 2.5 | Eval Layer | eval_labels table, prompt versioning, weekly metrics report | 2h |
 | 3 | More Sources | WeWorkRemotely, RemoteOK, HN Who's Hiring, cross-source dedup | 3-4h |
