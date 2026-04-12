@@ -61,6 +61,32 @@ DISCARD_KEYWORDS = [
 ]
 
 # ---------------------------------------------------------------------------
+# Data paths
+# ---------------------------------------------------------------------------
+
+# Relative path from the python-service root to the candidate CV file.
+# Loaded once at startup and injected into every scoring prompt.
+CV_PATH = "data/cv.txt"
+
+# ---------------------------------------------------------------------------
+# Eval layer
+# ---------------------------------------------------------------------------
+
+# Minimum judge overall_quality score (1–5) required for a fixture to PASS.
+# If the judge returns a quality below this AND the fixture's assertion
+# status was PASS, the result is downgraded to FAIL. This turns the judge
+# from a diagnostic tool into a real quality gate.
+# 3 = "score off by >1 point OR one key dimension ignored" on the judge's
+# 5-point scale — anything below that signals genuinely poor output.
+JUDGE_MIN_QUALITY = 3
+
+# Human-readable version tag for the current scoring prompt. Bump this
+# (e.g. "v2.0") whenever _SCORING_PROMPT_TEMPLATE in pipeline/scoring.py
+# is changed in a meaningful way. Eval reports are named after this version
+# so you can diff results across prompt iterations.
+PROMPT_VERSION = "v1.0"
+
+# ---------------------------------------------------------------------------
 # Scoring
 # ---------------------------------------------------------------------------
 
