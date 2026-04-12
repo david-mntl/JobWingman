@@ -4,6 +4,7 @@ JobWingman — FastAPI service entry point.
 This file is the HTTP controller. Its only responsibilities are:
 - Load the CV at startup and hold it in module-level state.
 - Instantiate the LLM client once.
+- Start the Telegram bot listener as a background task.
 - Define HTTP endpoints, map requests to pipeline/service calls, and return
   HTTP responses.
 
@@ -16,6 +17,7 @@ Endpoints:
   POST /telegram/send         — send an arbitrary message to Telegram
   POST /jobs/fetch-and-score  — run the full pipeline, return top jobs as JSON
   POST /jobs/send-digest      — run pipeline + send Telegram digest
+  POST /jobs/analyze-url      — fetch, score, and send a single job URL (Phase 5)
   DELETE /jobs/clear-db       — reset dedup state (dev helper)
 """
 
@@ -23,16 +25,18 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import httpx
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
-from constants import TELEGRAM_PARSE_MODE
 from logger import get_logger
 from llm import GeminiClient
+from job_sources.url_scraper import analyze_url
 from pipeline.orchestrator import run_pipeline
 from storage.database import clear_all_seen
-from telegram.formatter import format_digest
-from models.telegram import TelegramMessage
+from telegram.bot import TelegramBotListener
+from telegram.client import send_message
+from telegram.formatter import format_digest, format_single_job
+from models.telegram import TelegramMessage, AnalyzeUrlRequest
 
 logger = get_logger(__name__)
 
@@ -41,7 +45,10 @@ logger = get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 CV_PATH = Path("data/cv.txt")
-TELEGRAM_API_BASE = "https://api.telegram.org"
+
+TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
+TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
+N8N_WEBHOOK_URL = os.environ["N8N_WEBHOOK_URL"]
 
 # ---------------------------------------------------------------------------
 # Module-level state
@@ -58,9 +65,13 @@ async def lifespan(app: FastAPI):
     """
     Application lifespan handler.
 
-    Loads cv.txt into module-level cv_text before the server starts accepting
-    requests. If the file is missing, the service starts anyway but logs a
-    warning — scoring will be degraded without CV content.
+    Loads cv.txt, instantiates the Telegram bot listener as a background asyncio
+    task, then yields control to the server. On shutdown the polling task is
+    cancelled cleanly.
+
+    Why the bot starts here rather than at module level:
+      The bot's analyze_fn closure captures cv_text, which must be loaded first.
+      The lifespan context guarantees the correct startup order.
     """
     global cv_text
     if CV_PATH.exists():
@@ -68,13 +79,23 @@ async def lifespan(app: FastAPI):
         logger.info("[startup] CV loaded — %d chars", len(cv_text))
     else:
         logger.warning("[startup] %s not found — scoring will be degraded", CV_PATH)
+
+    bot = TelegramBotListener(
+        token=TELEGRAM_BOT_TOKEN,
+        chat_id=TELEGRAM_CHAT_ID,
+        n8n_webhook_url=N8N_WEBHOOK_URL,
+        analyze_fn=lambda url: analyze_url(url, cv_text, _llm_client),
+    )
+    bot_task = bot.start()
+
     yield
+
+    bot_task.cancel()
+    logger.info("[shutdown] bot polling task cancelled")
 
 
 app = FastAPI(title="JobWingman", version="0.1.0", lifespan=lifespan)
 
-TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
 # Instantiated once at module level — fails fast at startup if GEMINI_API_KEY
 # is missing. Passed into every pipeline run via run_pipeline().
@@ -82,29 +103,24 @@ _llm_client = GeminiClient(api_key=os.environ.get("GEMINI_API_KEY", ""))
 
 
 # ---------------------------------------------------------------------------
-# Helper: send one Telegram message
+# Helper: send one Telegram message (wraps shared client for this service's
+# credentials, and maps HTTP errors to FastAPI HTTPException for endpoints)
 # ---------------------------------------------------------------------------
-
-
 async def _send_telegram(text: str) -> None:
     """
-    Send a single message to Telegram via the Bot API.
+    Send a single message to Telegram using this service's credentials.
+
+    Wraps telegram.client.send_message so endpoints don't need to pass the
+    token and chat_id explicitly on every call. Converts httpx errors into
+    HTTPException(502) so FastAPI returns a clean error response.
 
     Raises:
       HTTPException(502)  if Telegram rejects the message.
     """
-    url = f"{TELEGRAM_API_BASE}/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            url,
-            json={
-                "chat_id": TELEGRAM_CHAT_ID,
-                "text": text,
-                "parse_mode": TELEGRAM_PARSE_MODE,
-            },
-        )
-    if resp.status_code != 200:
-        raise HTTPException(status_code=502, detail=resp.text)
+    try:
+        await send_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, text)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -210,3 +226,33 @@ async def send_digest():
         await _send_telegram(message)
 
     return {"ok": True, "jobs_sent": len(result.jobs), "stats": result.stats}
+
+
+@app.post("/jobs/analyze-url")
+async def analyze_url_endpoint(req: AnalyzeUrlRequest):
+    """
+    Fetch, score, and deliver a single job posting URL as a Telegram card.
+
+    Accepts any job posting URL, fetches the page, uses the LLM to extract
+    structured job fields, runs hard-discard and scoring, and sends the result
+    to Telegram in the same card format as the daily digest.
+
+    Deduplication is intentionally skipped — the user explicitly requested this
+    URL so it is always analyzed regardless of prior exposure.
+
+    The endpoint always sends something to Telegram:
+      - On success: a scored job card.
+      - On failure: a specific error message explaining what went wrong.
+
+    This makes the endpoint safe to call from curl or n8n without also reading
+    the response body — the user sees the outcome in Telegram either way.
+    """
+    result = await analyze_url(req.url, cv_text, _llm_client)
+
+    if result.error:
+        await _send_telegram(result.error)
+        return {"ok": False, "error": result.error}
+
+    card = format_single_job(result.job)
+    await _send_telegram(card)
+    return {"ok": True}
