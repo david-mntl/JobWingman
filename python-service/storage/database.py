@@ -285,8 +285,8 @@ def get_saved_jobs() -> list[Job]:
     is reconstructed from the individual scoring columns so it matches the
     shape that the formatter expects (same keys as the LLM JSON output).
 
-    Note: db_id is set on each Job once that field is added to the model
-    (Phase 6, Commit 2). Until then it remains at its default (None).
+    db_id is populated from the saved_jobs row id so callers can reference or
+    delete the record without a separate lookup.
     """
     rows = _conn.execute(
         "SELECT * FROM saved_jobs ORDER BY saved_at DESC"
@@ -319,6 +319,7 @@ def get_saved_jobs() -> list[Job]:
             salary_max=row["salary_max"],
             hash=row["hash"],
             scoring=scoring,
+            db_id=row["id"],
         )
         jobs.append(job)
     return jobs
