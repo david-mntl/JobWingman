@@ -32,11 +32,13 @@ Designed to later merge into DailyLifeMate as a module.
 ---
 
 ## Current Status
-**Active Phase: 3 — More Sources** (next)
+**Active Phase: 5 — Manual URL Flow** (in progress)
 ~~Phase 0 — Foundation: complete~~
 ~~Phase 1 — First Source + Dedup: complete~~
 ~~Phase 2 — Full Scoring Engine: complete~~
-Phase 2.5 deferred → implement after Phase 5 (bot must be listening for button callbacks first, and labeled data needs to accumulate before metrics are meaningful)
+~~Phase 3 — More Sources: complete~~
+~~Phase 4 — Daily Digest + Deploy: skipped for now~~
+Phase 2.5 deferred for now.
 
 ---
 
@@ -164,7 +166,6 @@ Discard if ALL of:
 You: [paste URL]
 Bot: 🔍 Analyzing...
      [same card format]
-     [✅ Interested] [❌ Skip]
 ```
 
 ---
@@ -175,10 +176,10 @@ Bot: 🔍 Analyzing...
 | **0** | Foundation | n8n + FastAPI + Telegram "hello" message | 2-3h |
 | 1 | First Source + Dedup | Arbeitnow API, SQLite dedup, basic scoring, top 5 in Telegram | 3-4h |
 | 2 | Full Scoring Engine | Full LLM prompt, JSON output, hard discard, rich Telegram format | 3-4h |
-| 2.5 | Eval Layer | eval_labels table, prompt versioning, weekly metrics report | 2h |
+| ~~2.5~~ | ~~Eval Layer~~ | ~~eval_labels table, prompt versioning, weekly metrics report~~ | ~~deferred for now~~ |
 | 3 | More Sources | WeWorkRemotely, RemoteOK, HN Who's Hiring, cross-source dedup | 3-4h |
 | 4 | Daily Digest + Deploy | 7am cron, batch digest, deploy to Hetzner | 2h |
-| 5 | Manual URL Flow | Bot listens for URLs, /analyze-url, fallback to raw text | 2-3h |
+| **5** | **Manual URL Flow** | **Bot listens for URLs, /run command via n8n webhook — in progress** | **2-3h** |
 | 6 | Storage + Pipeline | `jobs` table, /pipeline command | 1-2h |
 | 7 | Risky Sources | LinkedIn, Welcome to the Jungle, WorkingNomads | 2-3h |
 
