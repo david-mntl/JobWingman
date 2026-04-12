@@ -45,6 +45,8 @@ EMOJI_VERDICT = "💬"
 EMOJI_STATS = "📊"
 EMOJI_ROBOT = "🤖"
 EMOJI_LINK = "🔗"
+EMOJI_SAVED = "💾"
+EMOJI_NO_MAIL = "📭"
 
 # Green flags that deserve a dedicated star callout in the card.
 STAR_FLAGS = ["4-day week", "4 day week", "four-day week", "32 hours"]
@@ -55,6 +57,9 @@ NO_JOBS_MESSAGE = (
     "The pipeline ran but nothing scored above the threshold. "
     "I'll try again tomorrow."
 )
+
+# Message shown when the user requests their saved jobs list but none are saved.
+NO_SAVED_JOBS_MESSAGE = f"{EMOJI_NO_MAIL} No saved jobs yet."
 
 
 # ---------------------------------------------------------------------------
@@ -189,20 +194,77 @@ def format_single_job(job: Job) -> str:
     return f"🔍 <b>Job analysis</b>\n\n{sep}\n{card}\n{sep}"
 
 
+def format_saved_jobs_list(jobs: list[Job]) -> list[str]:
+    """
+    Format the user's saved jobs as a compact list for the /list-jobs command.
+
+    Why db_id as the display number (not a loop counter):
+      The user will reference these numbers in a future /delete-job {id}
+      command.  Using the actual database row id means the user can copy the
+      number they see in chat and pass it directly — no translation required.
+      A loop counter (1, 2, 3…) would be meaningless outside this specific
+      message.
+
+    Why compact format instead of the full card layout:
+      The saved-jobs list is a quick-scan view: the user wants to see what
+      they have saved, not re-read the full analysis.  A one-to-two-line card
+      (title, company, score, link) is enough to identify a job and decide
+      whether to open it.
+
+    Packing logic:
+      Cards are joined with a blank line (\\n\\n) and accumulated into
+      messages that stay within TELEGRAM_MAX_MESSAGE_LENGTH.  When a new card
+      would exceed the limit, a fresh message is started with that card.  The
+      header ("💾 Saved jobs (N)") is prepended to the first message only.
+
+    Returns ["📭 No saved jobs yet."] when the list is empty.
+    """
+    if not jobs:
+        return [NO_SAVED_JOBS_MESSAGE]
+
+    header = f"<b>{EMOJI_SAVED} Saved jobs ({len(jobs)})</b>"
+
+    def _saved_card(job: Job) -> str:
+        scoring = job.scoring or {}
+        raw_score = scoring.get("match_score", 0)
+        score_str = f"{raw_score:.1f}" if isinstance(raw_score, float) else str(raw_score)
+        return (
+            f"<b>{job.db_id}. {job.title}</b> — {job.company}\n"
+            f"  {EMOJI_SCORE} {score_str}/10  "
+            f'{EMOJI_LINK} <a href="{job.url}">View</a>'
+        )
+
+    messages: list[str] = []
+    current = header
+
+    for job in jobs:
+        card = _saved_card(job)
+        joiner = "\n\n"
+        if len(current) + len(joiner) + len(card) > TELEGRAM_MAX_MESSAGE_LENGTH:
+            messages.append(current)
+            current = card
+        else:
+            current += joiner + card
+
+    messages.append(current)
+    return messages
+
+
 def format_digest(jobs: list[Job], stats: dict) -> list[str]:
     """
-    Format the Telegram digest as a list of message strings.
+    Format the Telegram digest as a list of message strings, one per job.
 
-    Returns a list instead of a single string because the Telegram Bot API
-    rejects messages longer than 4096 characters. Each message in the
-    returned list is guaranteed to be within that limit.
+    Why one message per job (instead of packing multiple cards per message):
+      Each card will later carry an inline "Save" button attached at the
+      Telegram message level. Telegram only allows one inline keyboard per
+      message, so every card must be its own message.  As a side effect the
+      chat is also easier to scroll — each card is a discrete, collapsible
+      unit rather than a wall of text.
 
-    Splitting strategy:
-      - The header goes into the first message.
-      - Job cards are appended one at a time. When adding the next card
-        would exceed the limit, a new message is started.
-      - The stats footer is appended to the last message (or becomes its
-        own message if it doesn't fit).
+    Structure:
+      messages[0]       — header: greeting + job count
+      messages[1..N]    — one card per job, prefixed with the separator line
+      messages[-1]      — stats footer, also prefixed with the separator line
 
     If the jobs list is empty, returns a single "nothing today" message.
     """
@@ -210,39 +272,22 @@ def format_digest(jobs: list[Job], stats: dict) -> list[str]:
         return [NO_JOBS_MESSAGE]
 
     count = len(jobs)
-    header = f"{EMOJI_ROBOT} Good morning David — {count} new job{'s' if count != 1 else ''} worth your attention\n"
+    header = (
+        f"{EMOJI_ROBOT} Good morning David — "
+        f"{count} new job{'s' if count != 1 else ''} worth your attention\n"
+    )
 
-    # Stats footer — built once, appended at the end
     fetched = stats.get("fetched", 0)
     after_filter = stats.get("after_filter", 0)
     delivered = stats.get("delivered", 0)
-    footer = f"\n{EMOJI_STATS} Today: {fetched} scanned → {after_filter} passed → {delivered} worth your time"
+    footer = (
+        f"{TELEGRAM_SEPARATOR}\n"
+        f"{EMOJI_STATS} Today: {fetched} scanned → {after_filter} passed → {delivered} worth your time"
+    )
 
-    # Build individual card blocks (separator + card text)
-    card_blocks = []
+    messages: list[str] = [header]
     for i, job in enumerate(jobs, start=1):
-        block = f"{TELEGRAM_SEPARATOR}\n{_format_card(i, job)}"
-        card_blocks.append(block)
-
-    # Pack cards into messages that fit within the Telegram limit
-    messages: list[str] = []
-    current = header
-
-    for block in card_blocks:
-        # +1 for the newline that joins current and block
-        if len(current) + 1 + len(block) > TELEGRAM_MAX_MESSAGE_LENGTH:
-            messages.append(current)
-            current = block
-        else:
-            current = current + "\n" + block
-
-    # Append closing separator + footer to the last chunk
-    closing = f"\n{TELEGRAM_SEPARATOR}{footer}"
-    if len(current) + len(closing) > TELEGRAM_MAX_MESSAGE_LENGTH:
-        messages.append(current)
-        messages.append(f"{TELEGRAM_SEPARATOR}{footer}")
-    else:
-        current += closing
-        messages.append(current)
+        messages.append(f"{TELEGRAM_SEPARATOR}\n{_format_card(i, job)}")
+    messages.append(footer)
 
     return messages
