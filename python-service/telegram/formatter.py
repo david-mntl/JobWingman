@@ -171,6 +171,24 @@ def _format_card(index: int, job: Job) -> str:
 # ---------------------------------------------------------------------------
 
 
+def format_single_job(job: Job) -> str:
+    """
+    Format a single job into a Telegram message string for on-demand analysis.
+
+    Used by the URL analysis flow where the user pastes a job URL
+    and receives a scored card. The layout is identical to a digest card but
+    wrapped with an "analysis" header instead of the digest header/footer.
+
+    Why reuse _format_card:
+      The card layout is defined once in _format_card. format_single_job is a
+      thin wrapper that adds context-appropriate framing without duplicating
+      the formatting logic.
+    """
+    card = _format_card(1, job)
+    sep = TELEGRAM_SEPARATOR
+    return f"🔍 <b>Job analysis</b>\n\n{sep}\n{card}\n{sep}"
+
+
 def format_digest(jobs: list[Job], stats: dict) -> list[str]:
     """
     Format the Telegram digest as a list of message strings.

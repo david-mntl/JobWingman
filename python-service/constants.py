@@ -75,7 +75,7 @@ MIN_MATCH_SCORE = 6.0
 MIN_SALARY_EUR = 95_000
 
 # Number of top-scored jobs included in the daily Telegram digest.
-TOP_N_JOBS = 10
+TOP_N_JOBS = 30
 
 # ---------------------------------------------------------------------------
 # Gemini LLM
@@ -143,6 +143,20 @@ TELEGRAM_SEPARATOR = "━━━━━━━━━━━━━━━━━━━�
 # Parse mode sent to the Telegram Bot API.
 # HTML allows <b>, <i>, <a href> tags in messages.
 TELEGRAM_PARSE_MODE = "HTML"
+
+# ---------------------------------------------------------------------------
+# Phase 5 — Bot listener + URL analysis
+# ---------------------------------------------------------------------------
+
+# Maximum characters of clean page text (after HTML stripping) sent to the
+# LLM for job extraction. 20000 chars captures any real job description with
+# room to spare, while preventing oversized prompts on content-heavy pages.
+URL_EXTRACTION_MAX_CHARS = 20000
+
+# Telegram long-poll timeout in seconds passed to the getUpdates API call.
+# Telegram holds the HTTP connection open for this long before returning an
+# empty response. Reduces API call frequency compared to short-polling.
+BOT_POLL_TIMEOUT = 30
 
 # ---------------------------------------------------------------------------
 # Source registry (Phase 3)

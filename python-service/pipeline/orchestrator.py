@@ -121,7 +121,9 @@ async def run_pipeline(cv_text: str, llm_client: LLMClient) -> PipelineResult:
             all_jobs.extend(result)
 
     fetched_count = len(all_jobs)
-    logger.debug("Stage 1 complete — %d raw jobs aggregated across all sources", fetched_count)
+    logger.debug(
+        "Stage 1 complete — %d raw jobs aggregated across all sources", fetched_count
+    )
 
     # --- Stage 2: Dedup ---
     # Jobs are marked seen immediately after the is_seen check so that a
@@ -158,6 +160,8 @@ async def run_pipeline(cv_text: str, llm_client: LLMClient) -> PipelineResult:
     )
 
     # --- Stage 6: Top N ---
+    logger.debug("Selecting top %d jobs from the following list:", TOP_N_JOBS)
+    logger.debug(scored)
     top = scored[:TOP_N_JOBS]
     logger.debug("Stage 6 — top %d selected from %d scored jobs", len(top), len(scored))
 
