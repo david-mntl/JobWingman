@@ -1,0 +1,29 @@
+# ---------------------------------------------------------------------------
+# JobWingman — Eval runner (Docker)
+#
+# Runs the eval suite from the host machine without needing the dev container.
+# Reuses the production Dockerfile (same Python environment as the live
+# service) but overrides CMD to run the eval script.
+#
+# Usage:
+#   docker compose -f docker-compose.eval.yml run --rm eval-runner
+#   docker compose -f docker-compose.eval.yml run --rm eval-runner --no-judge
+#   docker compose -f docker-compose.eval.yml run --rm eval-runner --fixture f004
+#
+# Or via the shell wrapper (auto-detects host vs container):
+#   ./python-service/eval/run_eval.sh
+# ---------------------------------------------------------------------------
+
+services:
+  eval-runner:
+    build: ./python-service
+    # Override the default CMD (uvicorn) to run the eval script instead.
+    # CLI args are appended by `docker compose run` automatically.
+    entrypoint: ["python", "eval/run_eval.py"]
+    env_file: .env
+    volumes:
+      # Mount live code so the container uses the current working tree
+      - ./python-service:/app
+      # Mount test_results so markdown reports and JSONL history persist
+      # on the host filesystem after the container exits
+      - ./python-service/eval/test_results:/app/eval/test_results

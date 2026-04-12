@@ -1,0 +1,302 @@
+[
+  {
+    "id": "f001",
+    "label": "Senior LLM Engineer — 100% remote, strong AI focus",
+    "source_url": null,
+    "job": {
+      "title": "Senior LLM / AI Engineer",
+      "company": "ContextAI GmbH",
+      "location": "Berlin, Germany (100% remote)",
+      "remote": true,
+      "tags": ["python", "llm", "langchain", "fastapi", "docker", "rag"],
+      "description": "We are building the next generation of enterprise AI assistants and are looking for a Senior LLM / AI Engineer to join our small, high-output team. You will design and own our RAG pipelines, evaluate LLM outputs, and ship agentic workflows that help knowledge workers get their jobs done. We work in Python, use FastAPI for our backend, and deploy on AWS with Docker. The team is fully remote across Europe. You will have a €5,000/year learning budget, access to the latest AI tooling, and a strong culture of ownership. Permanent position. No consulting, no client work — we build our own product."
+    },
+    "expected": {
+      "action": "score",
+      "score_min": 8.5,
+      "score_max": 10.0,
+      "must_have_green_flag_containing": "AI",
+      "ai_priority_high": true,
+      "judge_dimensions": ["ai_priority_correct", "output_concise"],
+      "notes": "Core AI/LLM role, 100% remote, own product, learning budget. Should score 8.5+. Tests that AI priority is correctly weighted above stack details."
+    }
+  },
+  {
+    "id": "f002",
+    "label": "Agentic Systems Engineer — remote, 4-day week, ESOP",
+    "source_url": null,
+    "job": {
+      "title": "Agentic Systems Engineer",
+      "company": "Orbis Workflows",
+      "location": "Remote (EU)",
+      "remote": true,
+      "tags": ["python", "agents", "openai", "celery", "kubernetes", "grpc"],
+      "description": "Orbis Workflows builds automation infrastructure for mid-market companies. Our core product is an agent orchestration platform that coordinates multi-step AI workflows across tools, APIs, and data stores. We need an engineer who understands how to build reliable, observable agentic systems — not just call an LLM in a loop. You will design and implement agent runtimes, build evaluation harnesses, and own the reliability of our orchestration layer. We offer: 4-day work week (Monday–Thursday), 100% remote forever, €120k–140k, 0.5% ESOP, €3,000/year equipment budget, €2,500/year learning budget, no on-call rotations. Permanent contract."
+    },
+    "expected": {
+      "action": "score",
+      "score_min": 9.0,
+      "score_max": 10.0,
+      "must_have_green_flag_containing": "4-day",
+      "ai_priority_high": true,
+      "judge_dimensions": ["ai_priority_correct", "output_concise"],
+      "notes": "Ideal fit: agentic focus + 4-day week + ESOP + learning budget + remote. Tests that stacked green flags push score to 9+."
+    }
+  },
+  {
+    "id": "f003",
+    "label": "AI Engineer — hybrid 2 days/week Berlin (acceptable threshold)",
+    "source_url": null,
+    "job": {
+      "title": "AI Engineer (Backend)",
+      "company": "Monocle Labs",
+      "location": "Berlin, Germany",
+      "remote": false,
+      "tags": ["python", "ml-ops", "llm", "docker", "postgres"],
+      "description": "Monocle Labs builds AI-powered analytics tools for e-commerce companies. We are hiring an AI Engineer to own the LLM integration layer: prompt engineering, evaluation pipelines, and the API surface that our product team builds on. You will work 2 days per week from our Berlin office (Mitte) and the rest remotely. Permanent position, own product (no consulting). Salary: €95k–115k. Team: 12 engineers, low-ego culture, flat hierarchy. German language not required."
+    },
+    "expected": {
+      "action": "score",
+      "score_min": 7.5,
+      "score_max": 9.0,
+      "ai_priority_high": true,
+      "judge_dimensions": ["ai_priority_correct", "office_penalty_applied", "output_concise"],
+      "notes": "2-day hybrid is the stated acceptable threshold. Score should not be heavily penalised for office days. Tests the 2d hybrid = acceptable rule."
+    }
+  },
+  {
+    "id": "f004",
+    "label": "AI Engineer — hybrid 3 days/week in office (penalty zone)",
+    "source_url": null,
+    "job": {
+      "title": "AI Platform Engineer",
+      "company": "Stackform GmbH",
+      "location": "Berlin, Germany",
+      "remote": false,
+      "tags": ["python", "llm", "kafka", "docker", "pytorch"],
+      "description": "Stackform is building a next-generation data and AI platform for enterprise customers. We are looking for an AI Platform Engineer to join the team in Berlin. This role requires presence in our Berlin office 3 days per week (Monday, Wednesday, Friday); the remaining 2 days are remote. You will build LLM integration layers, evaluation tooling, and inference pipelines. Salary: €100k–120k. Own product, no consulting. Permanent contract."
+    },
+    "expected": {
+      "action": "score",
+      "score_min": 6.0,
+      "score_max": 7.0,
+      "ai_priority_high": true,
+      "judge_dimensions": ["ai_priority_correct", "office_penalty_applied", "output_concise"],
+      "notes": "3 days/week in office is explicitly beyond the 2-day acceptable threshold. Score should be penalised into the 6.0–7.0 borderline range even though the role itself is strong. Tests the explicit-office-days penalty rule."
+    }
+  },
+  {
+    "id": "f005",
+    "label": "AI Engineer — on-site 5 days Berlin (discard)",
+    "source_url": null,
+    "job": {
+      "title": "Senior AI Engineer",
+      "company": "Nexgen Systems AG",
+      "location": "Berlin, Germany",
+      "remote": false,
+      "tags": ["python", "llm", "fastapi", "docker"],
+      "description": "We are looking for a Senior AI Engineer to join our Berlin team. This is a fully on-site role — we believe in in-person collaboration and require all team members to be present in our Berlin office 5 days per week. No remote work option is available. You will work on LLM integrations, RAG systems, and agent tooling for our enterprise customers. Salary: €110k–130k. Permanent contract."
+    },
+    "expected": {
+      "action": "score_discard",
+      "score_max": 5.9,
+      "judge_dimensions": ["office_penalty_applied", "location_rule_correct"],
+      "notes": "Full on-site (5 days) explicitly stated. Despite strong AI focus and good salary, the location requirement should push score below 6.0. Tests that office-only = discard."
+    }
+  },
+  {
+    "id": "f006",
+    "label": "Senior Backend Engineer — 100% remote, no AI mention",
+    "source_url": null,
+    "job": {
+      "title": "Senior Backend Engineer",
+      "company": "Fynapse Technologies",
+      "location": "Remote (EU/worldwide)",
+      "remote": true,
+      "tags": ["python", "fastapi", "postgres", "redis", "kafka", "docker"],
+      "description": "Fynapse builds payment infrastructure for fintech companies. We are looking for a Senior Backend Engineer to join our distributed systems team. You will design and own microservices that process millions of transactions per day, maintain high-availability APIs, and improve the reliability of our Kafka-based event pipeline. Our stack: Python, FastAPI, PostgreSQL, Redis, Docker. Fully remote, permanent contract. Salary: €100k–120k. No office required, async-first culture. Own product."
+    },
+    "expected": {
+      "action": "score",
+      "score_min": 6.5,
+      "score_max": 7.5,
+      "ai_priority_high": false,
+      "judge_dimensions": ["ai_priority_correct", "output_concise"],
+      "notes": "Good backend match (distributed systems, microservices) but zero AI focus. Should score in the 6.5–7.5 good-but-not-ideal range. Tests that non-AI roles are shown but ranked lower."
+    }
+  },
+  {
+    "id": "f007",
+    "label": "Backend Engineer — subtle consulting signals",
+    "source_url": null,
+    "job": {
+      "title": "Senior Backend Engineer",
+      "company": "TechBridge Solutions",
+      "location": "Remote (EU)",
+      "remote": true,
+      "tags": ["java", "spring-boot", "microservices", "docker", "kubernetes"],
+      "description": "TechBridge Solutions is a software engineering company that partners with leading enterprises to deliver digital transformation. We are looking for a Senior Backend Engineer to work with our clients across the financial services, healthcare, and logistics sectors. You will be embedded in project-based engagements, working closely with client teams to design and build microservices-based systems. Our engineers work on a variety of client projects, giving you exposure to diverse technical challenges. Permanent contract, remote-first. Salary: €90k–110k."
+    },
+    "expected": {
+      "action": "score",
+      "score_min": 6.0,
+      "score_max": 7.0,
+      "judge_dimensions": ["output_concise"],
+      "notes": "Consulting signals present: 'work with our clients', 'project-based engagements', 'embedded in client teams'. These are subtle (not the hard-discard keywords). Score should be penalised but not discarded. Tests that LLM catches implicit consulting patterns."
+    }
+  },
+  {
+    "id": "f008",
+    "label": "IT Consultant — body leasing / outsourcing (hard discard)",
+    "source_url": null,
+    "job": {
+      "title": "IT Consultant — Backend / Java",
+      "company": "ProStaff Consulting GmbH",
+      "location": "Berlin / Remote",
+      "remote": true,
+      "tags": ["java", "spring", "sql", "microservices"],
+      "description": "ProStaff Consulting GmbH specialises in IT staff augmentation and body leasing for enterprise clients across the DACH region. We are looking for experienced IT consultants to join our talent pool and be placed at client sites on project-based contracts. You will work as an outsourcing partner for our clients, primarily in the financial sector. Competitive day rate available. Freelance or permanent contract options."
+    },
+    "expected": {
+      "action": "hard_discard",
+      "notes": "Contains explicit hard-discard keywords: 'staff augmentation', 'body leasing', 'outsourcing'. Must be caught by apply_hard_discard() before the LLM is called. Tests the pre-LLM filter."
+    }
+  },
+  {
+    "id": "f009",
+    "label": "AI Engineer — US-only, no remote option (discard)",
+    "source_url": null,
+    "job": {
+      "title": "Senior AI Engineer",
+      "company": "Brightwave AI",
+      "location": "San Francisco, CA, USA",
+      "remote": false,
+      "tags": ["python", "llm", "pytorch", "langchain", "aws"],
+      "description": "Brightwave AI is building AI-powered tools for investment research. We are hiring a Senior AI Engineer to join our San Francisco team. This role is based in our SF office; candidates must be authorised to work in the United States. We do not offer visa sponsorship and cannot consider applicants outside the US. You will build LLM pipelines, RAG systems, and evaluation infrastructure. Salary: $160k–200k. Equity: 0.1–0.3%. 100% in-office."
+    },
+    "expected": {
+      "action": "score_discard",
+      "score_max": 5.9,
+      "judge_dimensions": ["location_rule_correct"],
+      "notes": "US-only, no remote, US work authorisation required. Despite strong AI focus and high salary, should be discarded for location. Tests that an explicit US-only constraint results in score < 6.0."
+    }
+  },
+  {
+    "id": "f010",
+    "label": "AI Platform Engineer — location not stated anywhere",
+    "source_url": null,
+    "job": {
+      "title": "AI Platform Engineer",
+      "company": "VaultAI",
+      "location": "",
+      "remote": false,
+      "tags": ["python", "llm", "fastapi", "kubernetes", "grpc"],
+      "description": "VaultAI builds AI infrastructure for regulated industries. We are looking for an AI Platform Engineer to design and own our model serving layer, evaluation pipelines, and the API surface used by product teams. The role involves building reliable, low-latency inference APIs, managing prompt versioning, and writing evaluation harnesses for LLM outputs. Strong Python, distributed systems knowledge, and interest in AI systems required. Permanent contract. Competitive salary and benefits."
+    },
+    "expected": {
+      "action": "score",
+      "score_min": 6.5,
+      "score_max": 9.0,
+      "ai_priority_high": true,
+      "judge_dimensions": ["ai_priority_correct", "location_rule_correct", "output_concise"],
+      "notes": "No location stated anywhere — not 'Remote', not a city, not a country. The rule is: ambiguous location = do not discard, still show. Tests that the scorer does not penalise a job simply because location info is absent."
+    }
+  },
+  {
+    "id": "f011",
+    "label": "ML Research Scientist — PhD-level model training (discard)",
+    "source_url": null,
+    "job": {
+      "title": "ML Research Scientist — Large Language Models",
+      "company": "Deepmind-adjacent lab (Research)",
+      "location": "Remote",
+      "remote": true,
+      "tags": ["python", "pytorch", "cuda", "transformers", "research"],
+      "description": "We are a fundamental AI research lab focused on pushing the boundaries of large language model capabilities. We are looking for an ML Research Scientist with a strong background in machine learning theory and model pre-training. Responsibilities include designing and running pre-training experiments at scale (billions of parameters), implementing novel architectures in PyTorch/CUDA, and publishing results in top ML venues (NeurIPS, ICML, ICLR). A PhD in Machine Learning, Computer Science, or a related field is required. Deep expertise in optimisation theory, scaling laws, and distributed training (FSDP, DeepSpeed) is essential. This is a pure research role with no product engineering component."
+    },
+    "expected": {
+      "action": "score_discard",
+      "score_max": 5.9,
+      "judge_dimensions": ["ml_research_penalty_applied"],
+      "notes": "Pure ML research: PhD required, pre-training at scale, publishing papers, no engineering component. David lacks PhD-level ML theory depth. Despite 100% remote, should score below 6.0. Tests that pure research = discard, not just a mild penalty."
+    }
+  },
+  {
+    "id": "f012",
+    "label": "ML Infrastructure Engineer — pipelines, not research (acceptable)",
+    "source_url": null,
+    "job": {
+      "title": "ML Infrastructure Engineer",
+      "company": "Artisan ML",
+      "location": "Remote (EU)",
+      "remote": true,
+      "tags": ["python", "mlflow", "docker", "kubernetes", "fastapi", "airflow"],
+      "description": "Artisan ML builds tooling that helps teams deploy, monitor, and iterate on machine learning models in production. We are looking for an ML Infrastructure Engineer to own our model serving layer, training pipelines, and experiment tracking infrastructure. You will integrate models into production APIs (FastAPI), build reliable batch training pipelines (Airflow), and instrument model monitoring dashboards. No ML research is involved — this is a backend/infra engineering role applied to the ML domain. Strong Python, Docker, Kubernetes, and distributed systems knowledge required. 100% remote. Salary: €95k–115k."
+    },
+    "expected": {
+      "action": "score",
+      "score_min": 6.5,
+      "score_max": 8.0,
+      "ai_priority_high": false,
+      "judge_dimensions": ["ml_research_penalty_applied", "output_concise"],
+      "notes": "ML infra/pipelines — explicitly not research. David's distributed systems and backend skills transfer well. Should be treated as a viable engineering role, not penalised as 'pure ML'. Tests the distinction between ML research (bad) and ML infra (acceptable)."
+    }
+  },
+  {
+    "id": "f013",
+    "label": "Backend Engineer — excellent benefits bundle, no AI",
+    "source_url": null,
+    "job": {
+      "title": "Senior Backend Engineer",
+      "company": "WellCraft Technologies",
+      "location": "Remote (EU/worldwide)",
+      "remote": true,
+      "tags": ["go", "grpc", "postgres", "kafka", "docker"],
+      "description": "WellCraft builds B2B SaaS tools for supply chain management. We are looking for a Senior Backend Engineer to join our core platform team. You will design and maintain our gRPC microservices, own database performance, and contribute to our Kafka event pipeline. Own product, no consulting. Benefits: 4-day work week (Friday off), €110k–130k salary, private health insurance (full premium covered), DB public transport card (Deutschlandticket), €3,000/year home office equipment budget, €2,500/year learning/conference budget, 28 days paid leave, 0.2% ESOP. Fully remote, permanent contract."
+    },
+    "expected": {
+      "action": "score",
+      "score_min": 7.5,
+      "score_max": 9.5,
+      "must_have_green_flag_containing": "4-day",
+      "judge_dimensions": ["benefits_boost_applied", "output_concise"],
+      "notes": "Excellent benefits: 4-day week, health insurance, Deutschlandticket, equipment budget, learning budget, ESOP. No AI focus. The benefits bundle should boost the score significantly above a plain backend role. Tests that benefits are correctly factored in."
+    }
+  },
+  {
+    "id": "f014",
+    "label": "AI Engineer — salary explicitly below €95k threshold",
+    "source_url": null,
+    "job": {
+      "title": "AI Engineer",
+      "company": "StartupX Berlin",
+      "location": "Berlin, Germany (remote-friendly)",
+      "remote": true,
+      "tags": ["python", "llm", "fastapi", "openai"],
+      "description": "StartupX Berlin is an early-stage startup building AI-powered tools for SMEs. We are looking for an AI Engineer to help us build and maintain our LLM integration layer. You will work on prompt engineering, RAG pipelines, and our API backend. The role is fully remote. Salary: €65,000–80,000/year. Equity offered. We are a small team and offer lots of learning opportunities."
+    },
+    "expected": {
+      "action": "score_discard",
+      "score_max": 0.1,
+      "notes": "Salary explicitly stated as €65k–80k, which is below the €95k hard minimum. LLM should set match_score = 0 regardless of how strong the role otherwise looks. Tests the salary hard-discard rule in the scoring prompt."
+    }
+  },
+  {
+    "id": "f015",
+    "label": "AI Engineer — freelance / contract position (discard)",
+    "source_url": null,
+    "job": {
+      "title": "Freelance AI Engineer",
+      "company": "Catalyst Digital",
+      "location": "Remote",
+      "remote": true,
+      "tags": ["python", "llm", "openai", "langchain"],
+      "description": "Catalyst Digital is looking for a freelance AI Engineer for a 6-month contract engagement. You will help us build and integrate LLM-powered features into our SaaS platform. Day rate: €600–800. This is a contract role only — we do not have a permanent headcount open at this time. Remote work is possible for this contract. Potential to extend or convert to permanent after the initial engagement, but not guaranteed."
+    },
+    "expected": {
+      "action": "score_discard",
+      "score_max": 0.1,
+      "notes": "Explicitly a freelance/contract role. David only accepts permanent positions. LLM should set match_score = 0. Tests that the freelance/contract hard-discard rule in the scoring prompt fires correctly."
+    }
+  }
+]

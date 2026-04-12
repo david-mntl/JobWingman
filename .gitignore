@@ -7,3 +7,6 @@ __pycache__/
 n8n_data/
 
 logs/
+
+# Eval reports — generated locally, not committed
+python-service/eval/test_results/
