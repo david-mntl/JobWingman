@@ -148,6 +148,12 @@ TELEGRAM_PARSE_MODE = "HTML"
 # Phase 5 — Bot listener + URL analysis
 # ---------------------------------------------------------------------------
 
+# How many days a pending_jobs row is kept before it is automatically pruned
+# on startup. After this window the original "Save job" button will no longer
+# work (the job data is gone), so 14 days is a reasonable trade-off between
+# storage size and button longevity.
+PENDING_JOBS_TTL_DAYS = 14
+
 # Maximum characters of clean page text (after HTML stripping) sent to the
 # LLM for job extraction. 20000 chars captures any real job description with
 # room to spare, while preventing oversized prompts on content-heavy pages.

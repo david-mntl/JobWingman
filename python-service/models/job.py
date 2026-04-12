@@ -56,6 +56,9 @@ class Job:
                   the scoring stage. Keys: match_score, salary_signal,
                   red_flags, green_flags, fit_breakdown, company_snapshot,
                   role_summary, company_benefits, confidence, verdict.
+      db_id       Integer row id assigned by the saved_jobs table once the user
+                  explicitly saves this job. None until save_job() is called and
+                  the returned id is stored back on the instance.
     """
 
     # --- Required source fields ---
@@ -75,3 +78,6 @@ class Job:
     # --- Pipeline-added fields (always start as None) ---
     hash: str | None = None
     scoring: dict | None = None
+
+    # --- Storage-assigned field (set after saving to saved_jobs) ---
+    db_id: int | None = None

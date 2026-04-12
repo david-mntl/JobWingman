@@ -33,7 +33,7 @@ import httpx
 from constants import BOT_POLL_TIMEOUT
 from logger import get_logger
 from telegram.client import send_message
-from telegram.formatter import format_single_job
+from telegram.formatter import format_single_job, format_saved_jobs_list
 
 logger = get_logger(__name__)
 
@@ -43,10 +43,35 @@ _TELEGRAM_API_BASE = "https://api.telegram.org"
 # Seconds to wait before retrying after a polling error (network failure, etc.)
 _POLL_ERROR_BACKOFF = 5
 
+# Prefix for the callback_data field on the "Save job" inline button.
+# Full value: CALLBACK_SAVE_JOB_PREFIX + job.hash
+# e.g. "save:d41d8cd98f00b204e9800998ecf8427e" = 37 bytes, under Telegram's
+# 64-byte callback_data limit. Exported so main.py can import it and produce
+# matching callback_data when building buttons for the digest delivery.
+CALLBACK_SAVE_JOB_PREFIX = "save:"
+
+
+def _make_save_markup(job_hash: str) -> dict:
+    """
+    Build a Telegram InlineKeyboardMarkup dict for the Save job button.
+
+    reply_markup shape expected by the Telegram Bot API:
+      {"inline_keyboard": [[{"text": "...", "callback_data": "..."}]]}
+    The outer list is rows; the inner list is buttons in that row.
+    We use a single row with a single button.
+    """
+    return {
+        "inline_keyboard": [[
+            {"text": "💾 Save job", "callback_data": f"{CALLBACK_SAVE_JOB_PREFIX}{job_hash}"}
+        ]]
+    }
+
+
 # Help text sent when the user sends an unrecognised message.
 _HELP_TEXT = (
     "JobWingman commands:\n\n"
     "/run — trigger the full job pipeline now (no need to wait for the 7am cron)\n\n"
+    "/list-jobs — view your saved jobs\n\n"
     "Or paste any job posting URL to get an instant scored analysis."
 )
 
@@ -60,12 +85,22 @@ class TelegramBotListener:
     from acting on messages if it is accidentally added to a group.
 
     Attributes:
-        _token:          Telegram Bot API token.
-        _chat_id:        Authorised chat ID (string for comparison).
-        _n8n_webhook_url: n8n webhook URL to POST when /run is received.
-        _analyze_fn:     Async callback for URL analysis; injected from main.py
-                         to avoid circular imports. Signature:
-                         async (url: str) -> AnalyzeResult
+        _token:                  Telegram Bot API token.
+        _chat_id:                Authorised chat ID (string for comparison).
+        _n8n_webhook_url:        n8n webhook URL to POST when /run is received.
+        _analyze_fn:             Async callback for URL analysis; injected from main.py
+                                 to avoid circular imports. Signature:
+                                 async (url: str) -> AnalyzeResult
+        _save_fn:                Callable[[Job], int] — injected from main.py to avoid
+                                 circular imports; called to persist a job the user saves.
+        _get_saved_jobs_fn:      Callable[[], list[Job]] — injected from main.py; returns
+                                 all saved jobs for the /list-jobs command.
+        _insert_pending_job_fn:  Callable[[Job], None] — upserts a job into the SQLite
+                                 pending_jobs table so Save buttons survive restarts.
+        _get_pending_job_fn:     Callable[[str], Job | None] — retrieves a pending job
+                                 by its hash; returns None if not found or expired.
+        _delete_pending_job_fn:  Callable[[str], None] — removes a pending_jobs row
+                                 after the job has been saved successfully.
     """
 
     def __init__(
@@ -74,11 +109,21 @@ class TelegramBotListener:
         chat_id: str,
         n8n_webhook_url: str,
         analyze_fn,
+        save_fn,                # Callable[[Job], int]       — persist a saved job
+        get_saved_jobs_fn,      # Callable[[], list[Job]]    — list all saved jobs
+        insert_pending_job_fn,  # Callable[[Job], None]      — upsert into pending_jobs
+        get_pending_job_fn,     # Callable[[str], Job|None]  — lookup by hash
+        delete_pending_job_fn,  # Callable[[str], None]      — remove after save
     ) -> None:
         self._token = token
         self._chat_id = str(chat_id)
         self._n8n_webhook_url = n8n_webhook_url
         self._analyze_fn = analyze_fn
+        self._save_fn = save_fn
+        self._get_saved_jobs_fn = get_saved_jobs_fn
+        self._insert_pending_job_fn = insert_pending_job_fn
+        self._get_pending_job_fn = get_pending_job_fn
+        self._delete_pending_job_fn = delete_pending_job_fn
 
     # -----------------------------------------------------------------------
     # Lifecycle
@@ -161,6 +206,10 @@ class TelegramBotListener:
           - Messages from any chat other than the authorised TELEGRAM_CHAT_ID
           - Messages with no text field
         """
+        if "callback_query" in update:
+            await self._handle_save_callback(update["callback_query"])
+            return
+
         message = update.get("message")
         if not message:
             return
@@ -179,6 +228,8 @@ class TelegramBotListener:
         try:
             if text.startswith("/run"):
                 await self._handle_run()
+            elif text.startswith("/list-jobs"):
+                await self._handle_list_jobs()
             elif text.startswith("http://") or text.startswith("https://"):
                 await self._handle_url(text)
             else:
@@ -213,6 +264,85 @@ class TelegramBotListener:
                 f"URL: <code>{self._n8n_webhook_url}</code>"
             )
 
+    async def _handle_save_callback(self, callback_query: dict) -> None:
+        """
+        Handle a callback_query update triggered by the user tapping an inline button.
+
+        Telegram sends a callback_query (rather than a message) when the user taps
+        an inline keyboard button. The `data` field contains whatever string we put
+        in `callback_data` when we built the markup — in our case that is
+        CALLBACK_SAVE_JOB_PREFIX + job.hash.
+
+        Why answerCallbackQuery must be called immediately:
+          Telegram shows a loading spinner on the button until the bot calls
+          answerCallbackQuery. If we never answer, the spinner stays visible
+          indefinitely and the button appears stuck. Telegram requires the answer
+          within 10 seconds of receiving the callback.
+
+        Why we look up the job in pending_jobs by hash:
+          callback_data is limited to 64 bytes, which is enough for our "save:<hash>"
+          scheme (37 bytes) but not for a full serialised Job object. The full Job is
+          stored in the SQLite pending_jobs table (keyed by hash) when the URL analysis
+          result is sent, so the save handler can retrieve it without re-fetching or
+          re-parsing anything — and the lookup survives service restarts.
+        """
+        cq_id = callback_query.get("id", "")
+        chat_id = str(callback_query.get("message", {}).get("chat", {}).get("id", ""))
+        if chat_id != self._chat_id:
+            return
+
+        await self._answer_callback_query(cq_id)
+
+        callback_data = callback_query.get("data", "")
+        if not callback_data.startswith(CALLBACK_SAVE_JOB_PREFIX):
+            return
+
+        job_hash = callback_data[len(CALLBACK_SAVE_JOB_PREFIX):]
+        job = self._get_pending_job_fn(job_hash)
+        if job is None:
+            await self._send("⚠️ Could not save — try running again.")
+            return
+
+        try:
+            db_id = self._save_fn(job)
+            job.db_id = db_id
+            self._delete_pending_job_fn(job_hash)
+            await self._send(f"✅ Job saved: {job.title} — {job.company}")
+        except Exception:
+            logger.error("[bot] save_job failed:\n%s", traceback.format_exc())
+            await self._send("❌ Failed to save job. Check the service logs.")
+
+    async def _answer_callback_query(self, callback_query_id: str) -> None:
+        """
+        Call Telegram's answerCallbackQuery endpoint to dismiss the loading spinner.
+
+        Telegram shows a loading indicator on an inline button immediately after it
+        is tapped. The bot must call answerCallbackQuery to dismiss it; if skipped,
+        the UI shows a spinner indefinitely. Failure here is cosmetic — the save
+        operation still proceeds — so we log a warning but do not raise.
+        """
+        url = f"{_TELEGRAM_API_BASE}/bot{self._token}/answerCallbackQuery"
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.post(url, json={"callback_query_id": callback_query_id})
+        except Exception as exc:
+            logger.warning("[bot] answerCallbackQuery failed: %s", exc)
+
+    async def _handle_list_jobs(self) -> None:
+        """
+        Fetch and send all saved jobs.
+
+        Delegates to _get_saved_jobs_fn (injected at construction) rather than
+        importing storage.database directly — the same pattern used for analyze_fn
+        — to avoid circular imports between bot.py and the storage layer.
+        format_saved_jobs_list() may return multiple messages (one per job) so we
+        send each one individually.
+        """
+        jobs = self._get_saved_jobs_fn()
+        messages = format_saved_jobs_list(jobs)
+        for msg in messages:
+            await self._send(msg)
+
     async def _handle_url(self, url: str) -> None:
         """
         Analyze a job posting URL and return a scored card.
@@ -227,7 +357,20 @@ class TelegramBotListener:
         if result.error:
             await self._send(result.error)
         else:
-            await self._send(format_single_job(result.job))
+            from storage.database import make_hash  # deferred import — avoids circular
+            if not result.job.hash:
+                result.job.hash = make_hash(result.job.title, result.job.company)
+            self._insert_pending_job_fn(result.job)
+            try:
+                await send_message(
+                    self._token,
+                    self._chat_id,
+                    format_single_job(result.job),
+                    reply_markup=_make_save_markup(result.job.hash),
+                )
+            except Exception:
+                logger.error("[bot] send with markup failed:\n%s", traceback.format_exc())
+                await self._send(format_single_job(result.job))
 
     # -----------------------------------------------------------------------
     # Internal send helper

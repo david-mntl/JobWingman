@@ -32,8 +32,16 @@ from logger import get_logger
 from llm import GeminiClient
 from job_sources.url_scraper import analyze_url
 from pipeline.orchestrator import run_pipeline
-from storage.database import clear_all_seen
-from telegram.bot import TelegramBotListener
+from storage.database import (
+    clear_all_seen,
+    delete_pending_job,
+    get_pending_job,
+    get_saved_jobs,
+    insert_pending_job,
+    make_hash,
+    save_job,
+)
+from telegram.bot import TelegramBotListener, _make_save_markup
 from telegram.client import send_message
 from telegram.formatter import format_digest, format_single_job
 from models.telegram import TelegramMessage, AnalyzeUrlRequest
@@ -85,6 +93,11 @@ async def lifespan(app: FastAPI):
         chat_id=TELEGRAM_CHAT_ID,
         n8n_webhook_url=N8N_WEBHOOK_URL,
         analyze_fn=lambda url: analyze_url(url, cv_text, _llm_client),
+        save_fn=save_job,
+        get_saved_jobs_fn=get_saved_jobs,
+        insert_pending_job_fn=insert_pending_job,
+        get_pending_job_fn=get_pending_job,
+        delete_pending_job_fn=delete_pending_job,
     )
     bot_task = bot.start()
 
@@ -119,6 +132,20 @@ async def _send_telegram(text: str) -> None:
     """
     try:
         await send_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, text)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+async def _send_telegram_with_markup(text: str, reply_markup: dict) -> None:
+    """
+    Send a Telegram message with an inline keyboard attached.
+
+    Wraps send_message() with reply_markup, raising HTTPException on failure
+    the same way _send_telegram() does — so callers don't need separate
+    error handling for the two send paths.
+    """
+    try:
+        await send_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, text, reply_markup=reply_markup)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -222,8 +249,17 @@ async def send_digest():
             detail=f"Pipeline failed: {type(e).__name__}: {e}",
         )
 
-    for message in messages:
-        await _send_telegram(message)
+    for i, message in enumerate(messages):
+        # format_digest() returns [header, card_0, card_1, ..., footer].
+        # Job cards occupy indices 1 through len(messages)-2 (not the first
+        # header or the last footer). Each card maps to result.jobs[i - 1].
+        is_job_card = len(result.jobs) > 0 and 0 < i < len(messages) - 1
+        if is_job_card:
+            job = result.jobs[i - 1]
+            insert_pending_job(job)
+            await _send_telegram_with_markup(message, _make_save_markup(job.hash))
+        else:
+            await _send_telegram(message)
 
     return {"ok": True, "jobs_sent": len(result.jobs), "stats": result.stats}
 
@@ -253,6 +289,15 @@ async def analyze_url_endpoint(req: AnalyzeUrlRequest):
         await _send_telegram(result.error)
         return {"ok": False, "error": result.error}
 
+    # URL scraper skips the dedup pipeline, so hash may be None.
+    # Compute it now so the Save button callback has a stable lookup key.
+    if not result.job.hash:
+        result.job.hash = make_hash(result.job.title, result.job.company)
+
+    # Persist to SQLite so the Save button survives a service restart before
+    # the user taps it (same mechanism used by the bot's _handle_url path).
+    insert_pending_job(result.job)
+
     card = format_single_job(result.job)
-    await _send_telegram(card)
+    await _send_telegram_with_markup(card, _make_save_markup(result.job.hash))
     return {"ok": True}
