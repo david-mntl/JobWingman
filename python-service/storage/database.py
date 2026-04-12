@@ -138,6 +138,22 @@ _conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
 _conn.row_factory = sqlite3.Row  # rows behave like dicts: row["hash"]
 
 
+def purge_expired_pending_jobs() -> int:
+    """
+    Delete pending_jobs rows older than PENDING_JOBS_TTL_DAYS.
+
+    Returns the number of rows deleted so the caller can log the result.
+    Called once at startup inside _init() — keeping the hot path (insert,
+    get, delete) free of TTL checks.
+    """
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(days=PENDING_JOBS_TTL_DAYS)
+    ).isoformat()
+    cursor = _conn.execute("DELETE FROM pending_jobs WHERE saved_at < ?", (cutoff,))
+    _conn.commit()
+    return cursor.rowcount
+
+
 def _init() -> None:
     """
     Create tables and purge expired rows.
@@ -422,19 +438,3 @@ def delete_pending_job(job_hash: str) -> None:
     """
     _conn.execute("DELETE FROM pending_jobs WHERE hash = ?", (job_hash,))
     _conn.commit()
-
-
-def purge_expired_pending_jobs() -> int:
-    """
-    Delete pending_jobs rows older than PENDING_JOBS_TTL_DAYS.
-
-    Returns the number of rows deleted so the caller can log the result.
-    Called once at startup inside _init() — keeping the hot path (insert,
-    get, delete) free of TTL checks.
-    """
-    cutoff = (
-        datetime.now(timezone.utc) - timedelta(days=PENDING_JOBS_TTL_DAYS)
-    ).isoformat()
-    cursor = _conn.execute("DELETE FROM pending_jobs WHERE saved_at < ?", (cutoff,))
-    _conn.commit()
-    return cursor.rowcount
