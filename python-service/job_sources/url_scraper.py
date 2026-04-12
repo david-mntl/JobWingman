@@ -23,7 +23,6 @@ Why a NamedTuple for the result instead of raising exceptions:
   right message to Telegram without knowing the internal failure chain.
 """
 
-import json
 from typing import NamedTuple
 
 import httpx
@@ -34,7 +33,7 @@ from logger import get_logger
 from llm import LLMClient
 from models.job import Job
 from pipeline.filters import apply_hard_discard
-from pipeline.scoring import score_job
+from pipeline.scoring import extract_json, score_job
 
 logger = get_logger(__name__)
 
@@ -89,11 +88,11 @@ class AnalyzeResult(NamedTuple):
 
 
 # ---------------------------------------------------------------------------
-# Internal helpers
+# Extraction helpers (used by analyze_url and eval/fixtures/create_fixture)
 # ---------------------------------------------------------------------------
 
 
-async def _fetch_page_text(url: str) -> str:
+async def fetch_page_text(url: str) -> str:
     """
     Fetch a URL and return its content as plain text.
 
@@ -117,35 +116,7 @@ async def _fetch_page_text(url: str) -> str:
     return text[:URL_EXTRACTION_MAX_CHARS]
 
 
-def _parse_json(raw: str) -> dict:
-    """
-    Parse LLM output into a dict.
-
-    Tries direct json.loads first. Falls back to extracting the substring
-    between the first '{' and last '}' to handle models that add prose around
-    the JSON — the same strategy used in pipeline/scoring.py.
-
-    Raises:
-        ValueError: if no valid JSON object can be extracted.
-    """
-    text = raw.strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-
-    start = text.find("{")
-    end = text.rfind("}")
-    if start != -1 and end > start:
-        try:
-            return json.loads(text[start : end + 1])
-        except json.JSONDecodeError:
-            pass
-
-    raise ValueError(f"No JSON found in model response: {raw[:200]}")
-
-
-async def _extract_job_fields(
+async def extract_job_fields(
     page_text: str, url: str, llm_client: LLMClient
 ) -> dict | None:
     """
@@ -159,7 +130,7 @@ async def _extract_job_fields(
     raw = await llm_client.generate(prompt)
 
     try:
-        data = _parse_json(raw)
+        data = extract_json(raw)
     except ValueError:
         logger.warning("[url_scraper] JSON parse failed for %s | raw: %s", url, raw[:200])
         return None
@@ -220,7 +191,7 @@ async def analyze_url(url: str, cv_text: str, llm_client: LLMClient) -> AnalyzeR
     """
     # Stage 1 — fetch page
     try:
-        page_text = await _fetch_page_text(url)
+        page_text = await fetch_page_text(url)
     except (httpx.HTTPStatusError, httpx.RequestError) as exc:
         logger.warning("[url_scraper] fetch failed for %s: %s", url, exc)
         return AnalyzeResult(
@@ -232,7 +203,7 @@ async def analyze_url(url: str, cv_text: str, llm_client: LLMClient) -> AnalyzeR
 
     # Stage 2 — LLM extraction
     try:
-        fields = await _extract_job_fields(page_text, url, llm_client)
+        fields = await extract_job_fields(page_text, url, llm_client)
     except Exception as exc:
         logger.warning("[url_scraper] LLM extraction error for %s: %s", url, exc)
         return AnalyzeResult(
