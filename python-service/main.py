@@ -28,6 +28,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from constants import CV_PATH
 from logger import get_logger
 from llm import GeminiClient
 from job_sources.url_scraper import analyze_url
@@ -52,7 +53,7 @@ logger = get_logger(__name__)
 # Configuration constants
 # ---------------------------------------------------------------------------
 
-CV_PATH = Path("data/cv.txt")
+_CV_FILE = Path(CV_PATH)
 
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
@@ -82,11 +83,11 @@ async def lifespan(app: FastAPI):
       The lifespan context guarantees the correct startup order.
     """
     global cv_text
-    if CV_PATH.exists():
-        cv_text = CV_PATH.read_text(encoding="utf-8")
+    if _CV_FILE.exists():
+        cv_text = _CV_FILE.read_text(encoding="utf-8")
         logger.info("[startup] CV loaded — %d chars", len(cv_text))
     else:
-        logger.warning("[startup] %s not found — scoring will be degraded", CV_PATH)
+        logger.warning("[startup] %s not found — scoring will be degraded", _CV_FILE)
 
     bot = TelegramBotListener(
         token=TELEGRAM_BOT_TOKEN,

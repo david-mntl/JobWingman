@@ -32,13 +32,14 @@ Designed to later merge into DailyLifeMate as a module.
 ---
 
 ## Current Status
-**Active Phase: 5 — Manual URL Flow** (in progress)
+**Active Phase: 2.5 — Eval Layer** (in progress)
 ~~Phase 0 — Foundation: complete~~
 ~~Phase 1 — First Source + Dedup: complete~~
 ~~Phase 2 — Full Scoring Engine: complete~~
 ~~Phase 3 — More Sources: complete~~
 ~~Phase 4 — Daily Digest + Deploy: skipped for now~~
-Phase 2.5 deferred for now.
+~~Phase 5 — Manual URL Flow: complete~~
+~~Phase 6 — Storage + Pipeline: complete (saved jobs button with interaction added; /pipeline command not implemented)~~
 
 ---
 
@@ -176,11 +177,11 @@ Bot: 🔍 Analyzing...
 | **0** | Foundation | n8n + FastAPI + Telegram "hello" message | 2-3h |
 | 1 | First Source + Dedup | Arbeitnow API, SQLite dedup, basic scoring, top 5 in Telegram | 3-4h |
 | 2 | Full Scoring Engine | Full LLM prompt, JSON output, hard discard, rich Telegram format | 3-4h |
-| ~~2.5~~ | ~~Eval Layer~~ | ~~eval_labels table, prompt versioning, weekly metrics report~~ | ~~deferred for now~~ |
+| **2.5** | **Eval Layer** | **eval_labels table, prompt versioning, weekly metrics report — in progress** | **3-4h** |
 | 3 | More Sources | WeWorkRemotely, RemoteOK, HN Who's Hiring, cross-source dedup | 3-4h |
 | 4 | Daily Digest + Deploy | 7am cron, batch digest, deploy to Hetzner | 2h |
-| **5** | **Manual URL Flow** | **Bot listens for URLs, /run command via n8n webhook — in progress** | **2-3h** |
-| 6 | Storage + Pipeline | `jobs` table, /pipeline command | 1-2h |
+| ~~5~~ | ~~Manual URL Flow~~ | ~~Bot listens for URLs, /run command via n8n webhook~~ | ~~2-3h~~ |
+| ~~6~~ | ~~Storage + Pipeline~~ | ~~`jobs` table, saved jobs button with interaction~~ | ~~1-2h~~ |
 | 7 | Risky Sources | LinkedIn, Welcome to the Jungle, WorkingNomads | 2-3h |
 
 **Job Sources by Phase:**

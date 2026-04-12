@@ -164,7 +164,7 @@ def _build_prompt(job: Job, cv: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _extract_json(raw: str) -> dict:
+def extract_json(raw: str) -> dict:
     """
     Parse the model's text output into a Python dict.
 
@@ -219,7 +219,7 @@ async def score_job(job: Job, cv: str, llm_client: LLMClient) -> Job | None:
     """
     prompt = _build_prompt(job, cv)
     raw = await llm_client.generate(prompt)
-    scoring = _extract_json(raw)
+    scoring = extract_json(raw)
 
     match_score = float(scoring.get("match_score", 0))
     job_label = f"{job.title} @ {job.company}"
