@@ -85,19 +85,22 @@ class TelegramBotListener:
     from acting on messages if it is accidentally added to a group.
 
     Attributes:
-        _token:              Telegram Bot API token.
-        _chat_id:            Authorised chat ID (string for comparison).
-        _n8n_webhook_url:    n8n webhook URL to POST when /run is received.
-        _analyze_fn:         Async callback for URL analysis; injected from main.py
-                             to avoid circular imports. Signature:
-                             async (url: str) -> AnalyzeResult
-        _save_fn:            Callable[[Job], int] — injected from main.py to avoid
-                             circular imports; called to persist a job the user saves.
-        _get_saved_jobs_fn:  Callable[[], list[Job]] — injected from main.py; returns
-                             all saved jobs for the /list-jobs command.
-        _pending_jobs:       Shared dict[str, Job] reference owned by main.py.
-                             Keyed by job.hash. Both the digest delivery path and this
-                             bot's URL handler populate it; the save callback consumes it.
+        _token:                  Telegram Bot API token.
+        _chat_id:                Authorised chat ID (string for comparison).
+        _n8n_webhook_url:        n8n webhook URL to POST when /run is received.
+        _analyze_fn:             Async callback for URL analysis; injected from main.py
+                                 to avoid circular imports. Signature:
+                                 async (url: str) -> AnalyzeResult
+        _save_fn:                Callable[[Job], int] — injected from main.py to avoid
+                                 circular imports; called to persist a job the user saves.
+        _get_saved_jobs_fn:      Callable[[], list[Job]] — injected from main.py; returns
+                                 all saved jobs for the /list-jobs command.
+        _insert_pending_job_fn:  Callable[[Job], None] — upserts a job into the SQLite
+                                 pending_jobs table so Save buttons survive restarts.
+        _get_pending_job_fn:     Callable[[str], Job | None] — retrieves a pending job
+                                 by its hash; returns None if not found or expired.
+        _delete_pending_job_fn:  Callable[[str], None] — removes a pending_jobs row
+                                 after the job has been saved successfully.
     """
 
     def __init__(
@@ -106,13 +109,11 @@ class TelegramBotListener:
         chat_id: str,
         n8n_webhook_url: str,
         analyze_fn,
-        save_fn,            # Callable[[Job], int]  — injected from main.py to avoid
-                            # circular imports; called to persist a job the user saves
-        get_saved_jobs_fn,  # Callable[[], list[Job]] — injected from main.py; returns
-                            # all saved jobs for the /list-jobs command
-        pending_jobs: dict, # Shared dict[str, Job] reference owned by main.py.
-                            # Keyed by job.hash. Both the digest delivery path and this
-                            # bot's URL handler populate it; the save callback consumes it.
+        save_fn,                # Callable[[Job], int]       — persist a saved job
+        get_saved_jobs_fn,      # Callable[[], list[Job]]    — list all saved jobs
+        insert_pending_job_fn,  # Callable[[Job], None]      — upsert into pending_jobs
+        get_pending_job_fn,     # Callable[[str], Job|None]  — lookup by hash
+        delete_pending_job_fn,  # Callable[[str], None]      — remove after save
     ) -> None:
         self._token = token
         self._chat_id = str(chat_id)
@@ -120,7 +121,9 @@ class TelegramBotListener:
         self._analyze_fn = analyze_fn
         self._save_fn = save_fn
         self._get_saved_jobs_fn = get_saved_jobs_fn
-        self._pending_jobs = pending_jobs
+        self._insert_pending_job_fn = insert_pending_job_fn
+        self._get_pending_job_fn = get_pending_job_fn
+        self._delete_pending_job_fn = delete_pending_job_fn
 
     # -----------------------------------------------------------------------
     # Lifecycle
@@ -276,11 +279,12 @@ class TelegramBotListener:
           indefinitely and the button appears stuck. Telegram requires the answer
           within 10 seconds of receiving the callback.
 
-        Why we look up the job in _pending_jobs by hash:
+        Why we look up the job in pending_jobs by hash:
           callback_data is limited to 64 bytes, which is enough for our "save:<hash>"
           scheme (37 bytes) but not for a full serialised Job object. The full Job is
-          cached in _pending_jobs (keyed by hash) when the URL analysis result is sent,
-          so the save handler can retrieve it without re-fetching or re-parsing anything.
+          stored in the SQLite pending_jobs table (keyed by hash) when the URL analysis
+          result is sent, so the save handler can retrieve it without re-fetching or
+          re-parsing anything — and the lookup survives service restarts.
         """
         cq_id = callback_query.get("id", "")
         chat_id = str(callback_query.get("message", {}).get("chat", {}).get("id", ""))
@@ -294,7 +298,7 @@ class TelegramBotListener:
             return
 
         job_hash = callback_data[len(CALLBACK_SAVE_JOB_PREFIX):]
-        job = self._pending_jobs.get(job_hash)
+        job = self._get_pending_job_fn(job_hash)
         if job is None:
             await self._send("⚠️ Could not save — try running again.")
             return
@@ -302,6 +306,7 @@ class TelegramBotListener:
         try:
             db_id = self._save_fn(job)
             job.db_id = db_id
+            self._delete_pending_job_fn(job_hash)
             await self._send(f"✅ Job saved: {job.title} — {job.company}")
         except Exception:
             logger.error("[bot] save_job failed:\n%s", traceback.format_exc())
@@ -355,7 +360,7 @@ class TelegramBotListener:
             from storage.database import make_hash  # deferred import — avoids circular
             if not result.job.hash:
                 result.job.hash = make_hash(result.job.title, result.job.company)
-            self._pending_jobs[result.job.hash] = result.job
+            self._insert_pending_job_fn(result.job)
             try:
                 await send_message(
                     self._token,

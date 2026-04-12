@@ -32,7 +32,14 @@ from logger import get_logger
 from llm import GeminiClient
 from job_sources.url_scraper import analyze_url
 from pipeline.orchestrator import run_pipeline
-from storage.database import clear_all_seen
+from storage.database import (
+    clear_all_seen,
+    delete_pending_job,
+    get_pending_job,
+    get_saved_jobs,
+    insert_pending_job,
+    save_job,
+)
 from telegram.bot import TelegramBotListener
 from telegram.client import send_message
 from telegram.formatter import format_digest, format_single_job
@@ -85,6 +92,11 @@ async def lifespan(app: FastAPI):
         chat_id=TELEGRAM_CHAT_ID,
         n8n_webhook_url=N8N_WEBHOOK_URL,
         analyze_fn=lambda url: analyze_url(url, cv_text, _llm_client),
+        save_fn=save_job,
+        get_saved_jobs_fn=get_saved_jobs,
+        insert_pending_job_fn=insert_pending_job,
+        get_pending_job_fn=get_pending_job,
+        delete_pending_job_fn=delete_pending_job,
     )
     bot_task = bot.start()
 

@@ -3,7 +3,7 @@ JobWingman — SQLite database module.
 
 Responsibilities:
 - Open (and create if missing) the SQLite database file.
-- Create the `seen_jobs` and `saved_jobs` tables on first run.
+- Create the `seen_jobs`, `saved_jobs`, and `pending_jobs` tables on first run.
 - Provide operations used by the deduplication layer:
     - is_seen(hash)  → bool   check if a job was already processed
     - mark_seen(job) → None   insert a new job hash with a 30-day expiry
@@ -11,7 +11,13 @@ Responsibilities:
     - save_job(job)           → int        persist a scored job the user wants to keep
     - get_saved_jobs()        → list[Job]  return all saved jobs, newest first
     - delete_saved_job(db_id) → bool       remove a saved job by its row id
-- Purge expired seen_jobs rows on every startup so the file does not grow forever.
+- Provide operations for the pending-jobs store (restart-safe "Save" buttons):
+    - insert_pending_job(job)          → None       upsert a job awaiting save
+    - get_pending_job(hash)            → Job | None retrieve by hash
+    - delete_pending_job(hash)         → None       remove after a successful save
+    - purge_expired_pending_jobs()     → int        prune rows older than TTL
+- Purge expired seen_jobs and pending_jobs rows on every startup so the file
+  does not grow forever.
 
 Why SQLite and not PostgreSQL here:
   SQLite requires zero infrastructure — it is a single file managed by
@@ -29,13 +35,18 @@ Why a module-level connection (not per-request):
   on a thread different from the one that opened the connection.
 """
 
+import dataclasses
 import hashlib
 import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from constants import PENDING_JOBS_TTL_DAYS
+from logger import get_logger
 from models.job import Job
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -99,6 +110,23 @@ CREATE TABLE IF NOT EXISTS saved_jobs (
 );
 """
 
+# Stores the full serialised Job for every analysis result that was sent to
+# Telegram with a "Save job" button. Rows are looked up by hash when the user
+# taps the button. Rows are deleted immediately after a successful save and
+# pruned in bulk on startup after PENDING_JOBS_TTL_DAYS days.
+#
+# Why INSERT OR REPLACE (upsert):
+#   If the user pastes the same URL twice before tapping Save, the second
+#   analysis overwrites the first — the hash is identical but the scoring
+#   could have changed.
+_CREATE_PENDING_JOBS = """
+CREATE TABLE IF NOT EXISTS pending_jobs (
+    hash     TEXT PRIMARY KEY,
+    job_json TEXT NOT NULL,
+    saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+"""
+
 # ---------------------------------------------------------------------------
 # Connection
 # ---------------------------------------------------------------------------
@@ -107,7 +135,7 @@ CREATE TABLE IF NOT EXISTS saved_jobs (
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 _conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
-_conn.row_factory = sqlite3.Row   # rows behave like dicts: row["hash"]
+_conn.row_factory = sqlite3.Row  # rows behave like dicts: row["hash"]
 
 
 def _init() -> None:
@@ -120,16 +148,21 @@ def _init() -> None:
 
     Purging expired rows here (rather than on every insert) keeps the hot
     path fast. The trade-off is that a stale row lingers until the next
-    restart, which is acceptable — the expiry window is 30 days, not 30
-    seconds.
+    restart, which is acceptable — the expiry windows are 30 days and 14 days,
+    not 30 seconds.
     """
     _conn.execute(_CREATE_SEEN_JOBS)
     _conn.execute(_CREATE_SAVED_JOBS)
+    _conn.execute(_CREATE_PENDING_JOBS)
     _conn.execute(
         "DELETE FROM seen_jobs WHERE expires_at < ?",
         (datetime.now(timezone.utc).isoformat(),),
     )
     _conn.commit()
+
+    pruned = purge_expired_pending_jobs()
+    if pruned:
+        logger.info("[db] pruned %d expired pending_jobs rows on startup", pruned)
 
 
 _init()
@@ -138,6 +171,7 @@ _init()
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def make_hash(title: str, company: str) -> str:
     """
@@ -288,9 +322,7 @@ def get_saved_jobs() -> list[Job]:
     db_id is populated from the saved_jobs row id so callers can reference or
     delete the record without a separate lookup.
     """
-    rows = _conn.execute(
-        "SELECT * FROM saved_jobs ORDER BY saved_at DESC"
-    ).fetchall()
+    rows = _conn.execute("SELECT * FROM saved_jobs ORDER BY saved_at DESC").fetchall()
 
     jobs: list[Job] = []
     for row in rows:
@@ -337,3 +369,72 @@ def delete_saved_job(db_id: int) -> bool:
     cursor = _conn.execute("DELETE FROM saved_jobs WHERE id = ?", (db_id,))
     _conn.commit()
     return cursor.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+# Pending jobs  (restart-safe "Save job" buttons)
+# ---------------------------------------------------------------------------
+
+
+def insert_pending_job(job: Job) -> None:
+    """
+    Upsert a Job into pending_jobs, keyed by its hash.
+
+    Uses INSERT OR REPLACE so that if the user pastes the same URL twice
+    before tapping Save, the second (potentially fresher) analysis silently
+    replaces the first — no IntegrityError, first write does NOT win.
+
+    Why dataclasses.asdict + json.dumps:
+      Job contains only plain Python types (str, int, bool, list, dict, None)
+      so asdict() produces a JSON-serialisable dict with zero custom encoding.
+      The same dict is reconstructed with Job(**data) in get_pending_job().
+    """
+    _conn.execute(
+        "INSERT OR REPLACE INTO pending_jobs (hash, job_json) VALUES (?, ?)",
+        (job.hash, json.dumps(dataclasses.asdict(job))),
+    )
+    _conn.commit()
+
+
+def get_pending_job(job_hash: str) -> Job | None:
+    """
+    Return the Job stored under job_hash, or None if not found.
+
+    Deserialises the JSON blob back into a Job dataclass. The round-trip is
+    lossless because asdict() was used for serialisation and Job accepts the
+    same field names as keyword arguments.
+    """
+    row = _conn.execute(
+        "SELECT job_json FROM pending_jobs WHERE hash = ?", (job_hash,)
+    ).fetchone()
+    if row is None:
+        return None
+    return Job(**json.loads(row["job_json"]))
+
+
+def delete_pending_job(job_hash: str) -> None:
+    """
+    Delete the pending_jobs row for job_hash.
+
+    Called immediately after a successful save so the row does not linger
+    until the next startup purge. Deleting a non-existent hash is a silent
+    no-op — idempotent, never raises.
+    """
+    _conn.execute("DELETE FROM pending_jobs WHERE hash = ?", (job_hash,))
+    _conn.commit()
+
+
+def purge_expired_pending_jobs() -> int:
+    """
+    Delete pending_jobs rows older than PENDING_JOBS_TTL_DAYS.
+
+    Returns the number of rows deleted so the caller can log the result.
+    Called once at startup inside _init() — keeping the hot path (insert,
+    get, delete) free of TTL checks.
+    """
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(days=PENDING_JOBS_TTL_DAYS)
+    ).isoformat()
+    cursor = _conn.execute("DELETE FROM pending_jobs WHERE saved_at < ?", (cutoff,))
+    _conn.commit()
+    return cursor.rowcount
