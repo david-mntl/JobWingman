@@ -84,7 +84,7 @@ JUDGE_MIN_QUALITY = 3
 # (e.g. "v2.0") whenever _SCORING_PROMPT_TEMPLATE in pipeline/scoring.py
 # is changed in a meaningful way. Eval reports are named after this version
 # so you can diff results across prompt iterations.
-PROMPT_VERSION = "v1.0"
+PROMPT_VERSION = "v2.0"
 
 # ---------------------------------------------------------------------------
 # Scoring
