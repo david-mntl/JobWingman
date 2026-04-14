@@ -32,14 +32,15 @@ Designed to later merge into DailyLifeMate as a module.
 ---
 
 ## Current Status
-**Active Phase: 2.5 — Eval Layer** (in progress)
+**Active Phase: 7 — LinkedIn Source** (next up)
 ~~Phase 0 — Foundation: complete~~
 ~~Phase 1 — First Source + Dedup: complete~~
 ~~Phase 2 — Full Scoring Engine: complete~~
+~~Phase 2.5 — Eval Layer: complete~~
 ~~Phase 3 — More Sources: complete~~
-~~Phase 4 — Daily Digest + Deploy: skipped for now~~
 ~~Phase 5 — Manual URL Flow: complete~~
 ~~Phase 6 — Storage + Pipeline: complete (saved jobs button with interaction added; /pipeline command not implemented)~~
+Phase 4 — Daily Digest + Deploy: deferred to future (Hetzner VPS cron)
 
 ---
 
@@ -177,17 +178,17 @@ Bot: 🔍 Analyzing...
 | **0** | Foundation | n8n + FastAPI + Telegram "hello" message | 2-3h |
 | 1 | First Source + Dedup | Arbeitnow API, SQLite dedup, basic scoring, top 5 in Telegram | 3-4h |
 | 2 | Full Scoring Engine | Full LLM prompt, JSON output, hard discard, rich Telegram format | 3-4h |
-| **2.5** | **Eval Layer** | **eval_labels table, prompt versioning, weekly metrics report — in progress** | **3-4h** |
-| 3 | More Sources | WeWorkRemotely, RemoteOK, HN Who's Hiring, cross-source dedup | 3-4h |
-| 4 | Daily Digest + Deploy | 7am cron, batch digest, deploy to Hetzner | 2h |
+| ~~2.5~~ | ~~Eval Layer~~ | ~~eval_labels table, prompt versioning, weekly metrics report~~ | ~~3-4h~~ |
+| ~~3~~ | ~~More Sources~~ | ~~WeWorkRemotely, RemoteOK, HN Who's Hiring, cross-source dedup~~ | ~~3-4h~~ |
 | ~~5~~ | ~~Manual URL Flow~~ | ~~Bot listens for URLs, /run command via n8n webhook~~ | ~~2-3h~~ |
 | ~~6~~ | ~~Storage + Pipeline~~ | ~~`jobs` table, saved jobs button with interaction~~ | ~~1-2h~~ |
-| 7 | Risky Sources | LinkedIn, Welcome to the Jungle, WorkingNomads | 2-3h |
+| **7** | **LinkedIn Source** | **Add LinkedIn as a job source (scraping — risky)** | **2-3h** |
+| _Future_ | _Daily Digest + Deploy_ | _7am cron, batch digest, deploy to Hetzner_ | _2h_ |
 
 **Job Sources by Phase:**
 - Phase 1: Arbeitnow API (free, EU-focused, no auth required)
-- Phase 3+: Sources will be evaluated when we arrive — candidates include WeWorkRemotely RSS, RemoteOK API, HN Who's Hiring, Wellfound
-- Phase 7: LinkedIn, Welcome to the Jungle, WorkingNomads (risky/scraping — evaluated at that phase)
+- Phase 3: WeWorkRemotely, RemoteOK, Joblyst, RemoteRocketship (wired up)
+- Phase 7: LinkedIn (risky/scraping — active phase)
 
 ---
 
