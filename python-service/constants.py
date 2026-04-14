@@ -234,6 +234,7 @@ SOURCE_NAMES = [
     "weworkremotely",
     "remoteok",
     "arbeitnow",
+    "linkedin",
 ]
 
 # ---------------------------------------------------------------------------
@@ -309,3 +310,63 @@ REMOTEOK_API_URL = "https://remoteok.com/api"
 # Index of the first real job in the API response array. Element 0 is
 # metadata ({"legal": "..."}); jobs start at index 1.
 REMOTEOK_JOBS_OFFSET = 1
+
+# ---------------------------------------------------------------------------
+# LinkedIn (via python-jobspy)
+# ---------------------------------------------------------------------------
+
+# Search terms executed against LinkedIn's guest job search. One HTTP scrape
+# per term, results aggregated and deduped by job_url before normalization.
+# LinkedIn on JobSpy is the most restrictive source — we keep the term list
+# intentionally narrow so the total request volume stays below the ~10-page
+# per-IP rate limit observed in the wild.
+#
+# Narrowed to AI/LLM roles only (NOT generic backend or full-stack) because
+# LinkedIn returns thousands of backend postings that dilute the signal and
+# don't match the target profile.
+LINKEDIN_SEARCH_TERMS = [
+    "AI Engineer",
+    "LLM Engineer",
+]
+
+# Cap on results returned per search term. 30 × 2 terms = 60 jobs total,
+# which keeps us well under LinkedIn's ~10-page-per-IP guest rate limit
+# (each page = ~25 jobs) and matches the user's requested ceiling.
+LINKEDIN_RESULTS_PER_TERM = 30
+
+# Location string passed to LinkedIn's guest search. "European Union" is
+# accepted as a valid LinkedIn geo and widens the pool beyond a single
+# country while still matching the target region (remote-EU + Berlin).
+LINKEDIN_LOCATION = "European Union"
+
+# Restrict to remote roles server-side. JobSpy passes this straight through
+# to LinkedIn's f_WT=2 filter. Hybrid/on-site jobs won't pass the scorer
+# anyway, so filtering them out here saves LLM tokens.
+LINKEDIN_IS_REMOTE = True
+
+# Only return postings from the last N hours. 72h covers the daily digest
+# cadence with enough overlap that a missed run doesn't skip jobs. Older
+# postings are usually already filled or dedup-hit from a previous run.
+LINKEDIN_HOURS_OLD = 72
+
+# Whether JobSpy should do a second per-job request to fetch the full job
+# description. False keeps us to one request per search page (~60 total
+# instead of ~120), dramatically reducing rate-limit risk. Scoring works
+# fine on title + short summary — same trade-off as Joblyst.
+LINKEDIN_FETCH_DESCRIPTION = False
+
+# Title keywords that a LinkedIn job must match to pass the in-source
+# relevance filter. STRICTER than the global RELEVANT_TITLE_KEYWORDS — on
+# LinkedIn the search term "AI Engineer" still returns results like
+# "Senior Backend Engineer (AI platform)". We only want genuinely AI/LLM-
+# focused titles here; backend/full-stack roles are intentionally excluded
+# from LinkedIn per the user's explicit instruction.
+LINKEDIN_TITLE_KEYWORDS = [
+    "ai",
+    "llm",
+    "agent",
+    "agentic",
+    "machine learning",
+    "ml engineer",
+    "ki",
+]
