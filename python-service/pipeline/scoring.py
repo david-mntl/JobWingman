@@ -59,6 +59,14 @@ Your job is to score how well this role fits David and return structured JSON.
    penalize heavily for language mismatch if the underlying engineering skills align.
    Only penalize if the role requires deep domain expertise he lacks entirely
    (e.g., PhD-level ML research, Kubernetes platform engineering, mobile dev).
+   Exception — ML research vs ML infrastructure:
+   Pure ML research (PhD required, pre-training experiments, publishing in ML
+   venues, no engineering/product component) → match_score < 5.0 (David lacks
+   PhD-level ML theory).
+   ML infrastructure / MLOps (model serving, training pipelines, experiment
+   tracking, production ML systems) → treat as a viable engineering role,
+   score on other merits. MLOps/infra does NOT qualify for the AI priority
+   boost unless the role specifically involves building LLM/agent systems.
 4. Own product over consulting — companies building their own product score higher
    than outsourcing/consulting/staff-augmentation shops.
 5. Culture signals — 4-day week, learning budget, equity/ESOP, low-ego culture,
@@ -75,6 +83,10 @@ Your job is to score how well this role fits David and return structured JSON.
   Anchor estimates to Berlin/EU senior backend/AI engineer market rates (€75k–130k).
 - Seniority: Junior roles that explicitly state a salary below €{min_salary_k}k are discarded.
   Junior/mid roles with no stated salary or salary above €95k can still be shown.
+- Location restriction: If the job explicitly requires US residency, US work
+  authorisation, or is physically located in the US/Canada/Asia with no remote
+  option → set match_score to 0 (hard discard). If location is ambiguous or
+  not stated → do NOT penalise, score based on other factors.
 
 ## Job to Evaluate
 Title:       {title}
@@ -91,18 +103,18 @@ outside the JSON, no explanation. Use exactly this structure:
 
 {{
   "match_score": <float 0.0–10.0>,
-  "salary_signal": "<string: stated range or estimate with reasoning>",
-  "red_flags": ["<string>", ...],
-  "green_flags": ["<string>", ...],
+  "salary_signal": "<max 15 words. Stated → just state it (e.g. '€95k–115k'). Not stated → 'Not stated — est. €XX–XXk'>",
+  "red_flags": ["<max 8 words each, specific to THIS job — no generic filler>", ...],
+  "green_flags": ["<max 8 words each, specific to THIS job — no generic filler>", ...],
   "fit_breakdown": {{
-    "strong": ["<skill or experience match>", ...],
-    "gaps":   ["<skill or experience gap>", ...]
+    "strong": ["<max 8 words each>", ...],
+    "gaps":   ["<max 8 words each>", ...]
   }},
-  "company_snapshot": "<3-sentence company description>",
-  "role_summary": ["<bullet>", "<bullet>", "<bullet>"],
-  "company_benefits": ["<benefit>", ...],
+  "company_snapshot": "<max 2 sentences: company name + what they do + one notable fact>",
+  "role_summary": ["<max 10 words each>", "<max 10 words each>", "<max 10 words each>"],
+  "company_benefits": ["<max 5 words each, e.g. '4-day week', '€5k learning budget'>", ...],
   "confidence": "<high | medium | low>",
-  "verdict": "<1-sentence honest recommendation>"
+  "verdict": "<max 12 words. One short decisive sentence.>"
 }}
 
 ## Confidence field
@@ -127,10 +139,35 @@ outside the JSON, no explanation. Use exactly this structure:
 - "Fast-paced startup" filler language with no substance
 - Subtle consulting signals: "work with our clients", "project-based engagements",
   "customer-facing consulting", "placed at client sites" — these indicate
-  outsourcing/body-shop even without the explicit keywords. Flag and lower score.
+  outsourcing/body-shop even without the explicit keywords. Flag and lower score
+  by ~1.0 point. IMPORTANT: NEVER score a job below 6.0 solely because of subtle
+  consulting signals — the minimum score for a viable role with consulting red
+  flags is 6.0.
 - Freelance or contract position — hard discard (match_score = 0)
 
+## Office Presence Penalty (when explicitly stated in the description)
+- 100% remote or not specified     → no penalty
+- Hybrid ≤ 2 days/week Berlin      → no penalty, but cap score at 9.0
+- Hybrid 3 days/week               → cap score at 7.0 regardless of other factors
+- Hybrid 4 days/week               → cap score at 6.0
+- On-site 5 days / full office     → cap score at 5.0 (will be discarded)
+
+## Benefits Scoring Boost
+Each of these, when explicitly mentioned in the posting, adds ~0.5 to the base score:
+- 4-day work week (always flag with ⭐)
+- Private health insurance / full premium covered
+- Public transport card (e.g. Deutschlandticket)
+- Home office / equipment budget (≥ €1,000/year)
+- Learning / conference budget (≥ €1,000/year)
+- Equity / ESOP
+Multiple benefits stack. A role with 4-day week + learning budget + ESOP + transport
+card could gain up to +2.0 over a comparable role with no stated benefits.
+
 ## match_score Rubric
+IMPORTANT: A role with clear AI/LLM/agent focus should ALWAYS score at
+least 1.0 point higher than an equivalent role without AI focus, all
+else being equal. AI relevance is the single most important factor.
+
   9–10  Exceptional — AI/LLM/agent focus, remote, strong culture signals,
         good stack overlap. Near-perfect for David's career trajectory.
   8–8.9 Strong — clear AI or backend alignment, remote or hybrid Berlin,
