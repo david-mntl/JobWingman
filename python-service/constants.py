@@ -100,6 +100,36 @@ MIN_MATCH_SCORE = 6.0
 # for hard filtering.
 MIN_SALARY_EUR = 95_000
 
+# ---------------------------------------------------------------------------
+# Verbosity limits (must match _SCORING_PROMPT_TEMPLATE word limits)
+# ---------------------------------------------------------------------------
+
+# Maps scoring JSON field paths to their maximum word count.
+# "scalar" limits apply to the whole field value; "list_item" limits apply to
+# each item individually. Word counting uses len(text.split()) — the same
+# way the prompt specifies "max N words" and the LLM interprets it.
+VERBOSITY_LIMITS: dict[str, dict] = {
+    "salary_signal":        {"max_words": 15, "kind": "scalar"},
+    "red_flags":            {"max_words": 8,  "kind": "list_item"},
+    "green_flags":          {"max_words": 8,  "kind": "list_item"},
+    "fit_breakdown.strong": {"max_words": 8,  "kind": "list_item"},
+    "fit_breakdown.gaps":   {"max_words": 8,  "kind": "list_item"},
+    "company_snapshot":     {"max_words": 30, "kind": "scalar"},
+    "role_summary":         {"max_words": 10, "kind": "list_item"},
+    "company_benefits":     {"max_words": 5,  "kind": "list_item"},
+    "verdict":              {"max_words": 12, "kind": "scalar"},
+}
+
+# Expected exact item counts for list fields. Fields not listed here accept
+# any length. role_summary should always be exactly 3 bullets.
+EXPECTED_LIST_LENGTHS: dict[str, int] = {
+    "role_summary": 3,
+}
+
+# company_snapshot says "max 2 sentences" in the prompt. We check sentence
+# count as a secondary signal alongside the word limit.
+COMPANY_SNAPSHOT_MAX_SENTENCES = 2
+
 # Number of top-scored jobs included in the daily Telegram digest.
 TOP_N_JOBS = 30
 

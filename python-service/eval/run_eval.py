@@ -48,6 +48,13 @@ from models.job import Job  # noqa: E402
 from pipeline.filters import apply_hard_discard  # noqa: E402
 from pipeline.scoring import score_job  # noqa: E402
 from eval.judge import judge_scoring  # noqa: E402
+from eval.verbosity import (  # noqa: E402
+    VerbosityReport,
+    StructureReport,
+    check_verbosity,
+    check_structure,
+    format_verbosity_summary,
+)
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -109,6 +116,8 @@ class FixtureResult:
     failure_reason: str = ""
     judge: dict | None = None  # full judge dict; None when not run
     scoring_result: dict = field(default_factory=dict)
+    verbosity: VerbosityReport | None = None
+    structure: StructureReport | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +252,11 @@ def _check_result(fixture: dict, job: Job, scored: Job | None) -> FixtureResult:
             base.status = "FAIL"
             base.failure_reason = f"Expected a green flag containing '{must_contain}' but got: {green_flags}"
             return base
+
+    # --- Verbosity + structure checks (warnings, not failures) ---
+    if scoring_result:
+        base.verbosity = check_verbosity(scoring_result)
+        base.structure = check_structure(scoring_result)
 
     return base  # PASS
 
@@ -408,8 +422,94 @@ def _write_report(
                 lines.append(f"**Verdict:** {verdict}")
             lines.append("")
 
+    # --- Verbosity + structure sections ---
+    verbosity_reports = [r.verbosity for r in results]
+    structure_reports = [r.structure for r in results]
+    fixture_ids = [r.fixture_id for r in results]
+    fixture_labels = [r.label for r in results]
+
+    verbosity_lines = format_verbosity_summary(
+        verbosity_reports, structure_reports, fixture_ids, fixture_labels
+    )
+    if verbosity_lines:
+        lines += verbosity_lines
+
     report_path.write_text("\n".join(lines), encoding="utf-8")
     return report_path
+
+
+# ---------------------------------------------------------------------------
+# Eval history (append-only JSONL)
+# ---------------------------------------------------------------------------
+
+
+def _append_history(
+    results: list[FixtureResult],
+    mode: str,
+    run_dt: datetime,
+) -> None:
+    """Append one JSON line to the eval history log for cross-version tracking."""
+    passed = sum(1 for r in results if r.status == "PASS")
+
+    judge_scores = [
+        r.judge.get("overall_quality", 0)
+        for r in results
+        if r.judge is not None
+        and isinstance(r.judge.get("overall_quality"), (int, float))
+    ]
+    avg_judge = sum(judge_scores) / len(judge_scores) if judge_scores else None
+
+    score_deltas = []
+    for r in results:
+        if (
+            r.actual_score is not None
+            and r.expected_score_min is not None
+            and r.expected_score_max is not None
+        ):
+            midpoint = (r.expected_score_min + r.expected_score_max) / 2
+            score_deltas.append(abs(r.actual_score - midpoint))
+    avg_delta = sum(score_deltas) / len(score_deltas) if score_deltas else None
+
+    # Verbosity aggregate
+    total_checked = sum(
+        r.verbosity.total_fields_checked
+        for r in results
+        if r.verbosity is not None
+    )
+    total_violations = sum(
+        r.verbosity.total_violations for r in results if r.verbosity is not None
+    )
+    violation_rate = (
+        round(total_violations / total_checked * 100, 1) if total_checked > 0 else 0.0
+    )
+
+    # Structure aggregate
+    structure_issues = sum(
+        r.structure.total_issues for r in results if r.structure is not None
+    )
+
+    entry = {
+        "prompt_version": PROMPT_VERSION,
+        "timestamp": run_dt.isoformat(),
+        "mode": mode,
+        "fixtures_run": len(results),
+        "passed": passed,
+        "failed": len(results) - passed,
+        "avg_score_delta": round(avg_delta, 2) if avg_delta is not None else None,
+        "avg_judge_quality": round(avg_judge, 1) if avg_judge is not None else None,
+        "verbosity_violations": total_violations,
+        "verbosity_violation_rate": violation_rate,
+        "structure_issues": structure_issues,
+    }
+
+    _EVAL_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(_EVAL_HISTORY_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except PermissionError:
+        # The existing file may be owned by root (from a prior Docker run).
+        # Write a warning instead of crashing — the report was already saved.
+        print(_dim("  (could not append to eval_history.jsonl — permission denied)"))
 
 
 # ---------------------------------------------------------------------------
@@ -618,6 +718,23 @@ async def _run(fixture_id: str | None, run_judge: bool) -> None:
 
     report_path = _write_report(results, mode, fixture_id, run_dt)
     print(f"Report saved: {_cyan(str(report_path.relative_to(_SERVICE_ROOT.parent)))}")
+
+    # --- Verbosity terminal summary ---
+    total_v = sum(
+        r.verbosity.total_violations for r in results if r.verbosity is not None
+    )
+    total_s = sum(
+        r.structure.total_issues for r in results if r.structure is not None
+    )
+    if total_v > 0 or total_s > 0:
+        parts = []
+        if total_v > 0:
+            parts.append(f"{total_v} verbosity violation{'s' if total_v != 1 else ''}")
+        if total_s > 0:
+            parts.append(f"{total_s} structure issue{'s' if total_s != 1 else ''}")
+        print(_dim(f"Warnings: {' | '.join(parts)}"))
+
+    _append_history(results, mode, run_dt)
     print()
 
 

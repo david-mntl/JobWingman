@@ -10,6 +10,7 @@ Contents:
   eval/fixtures/jobs.json         — 15 labelled test jobs (the regression suite)
   eval/fixtures/create_fixture.py — snapshot a live job URL into fixtures
   eval/judge.py                   — LLM-as-judge: reviews a scoring result
+  eval/verbosity.py               — mechanical verbosity + structural compliance checks
   eval/run_eval.py                — CLI runner: scores, asserts, generates report
   eval/run_eval.sh                — user-friendly shell wrapper with colored output
   eval/test_results/              — generated markdown reports (gitignored)
