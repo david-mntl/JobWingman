@@ -134,6 +134,31 @@ COMPANY_SNAPSHOT_MAX_SENTENCES = 2
 TOP_N_JOBS = 50
 
 # ---------------------------------------------------------------------------
+# LLM provider selection
+# ---------------------------------------------------------------------------
+
+# Canonical provider identifiers consumed by llm.factory.build_llm_client().
+# Kept as constants (not inline strings) so a typo in main.py or .env fails
+# at import time via the factory's ValueError rather than silently picking
+# the wrong backend.
+LLM_PROVIDER_GEMINI = "gemini"
+LLM_PROVIDER_GEMMA = "gemma"
+
+# Tuple of every valid provider — used by the factory to build its error
+# message and by tests to iterate over supported backends without having to
+# maintain a second list.
+LLM_PROVIDERS_SUPPORTED = (LLM_PROVIDER_GEMINI, LLM_PROVIDER_GEMMA)
+
+# Provider used when the LLM_PROVIDER env var is missing or empty. Gemma via
+# OpenRouter is the current default because the Gemini free tier has been
+# rate-limiting aggressively during development.
+LLM_PROVIDER_DEFAULT = LLM_PROVIDER_GEMMA
+
+# Environment variable name read by main.py to decide which client to build.
+# Centralising the name here means changing it later is a one-file edit.
+LLM_PROVIDER_ENV_VAR = "LLM_PROVIDER"
+
+# ---------------------------------------------------------------------------
 # Gemini LLM
 # ---------------------------------------------------------------------------
 
