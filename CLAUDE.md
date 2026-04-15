@@ -32,7 +32,7 @@ Designed to later merge into DailyLifeMate as a module.
 ---
 
 ## Current Status
-**Active Phase: 7 — LinkedIn Source** (next up)
+**Active Phase: 4 — Daily Digest + Deploy** (deferred to future — Hetzner VPS cron)
 ~~Phase 0 — Foundation: complete~~
 ~~Phase 1 — First Source + Dedup: complete~~
 ~~Phase 2 — Full Scoring Engine: complete~~
@@ -40,7 +40,9 @@ Designed to later merge into DailyLifeMate as a module.
 ~~Phase 3 — More Sources: complete~~
 ~~Phase 5 — Manual URL Flow: complete~~
 ~~Phase 6 — Storage + Pipeline: complete (saved jobs button with interaction added; /pipeline command not implemented)~~
-Phase 4 — Daily Digest + Deploy: deferred to future (Hetzner VPS cron)
+~~Phase 7 — LinkedIn Source: complete (python-jobspy, AI/LLM search terms only, 60-job cap, in-source cross-post dedup)~~
+
+Known constraint: LinkedIn via JobSpy rate-limits around ~10 pages per IP. Current config (2 terms × 30 results, ~3 pages each) stays well under that. If `/run` is triggered many times in a row, the LinkedIn source may return 0 jobs for a few minutes — logged as `[fetch] linkedin FAILED` and ignored by the orchestrator.
 
 ---
 
@@ -182,13 +184,13 @@ Bot: 🔍 Analyzing...
 | ~~3~~ | ~~More Sources~~ | ~~WeWorkRemotely, RemoteOK, HN Who's Hiring, cross-source dedup~~ | ~~3-4h~~ |
 | ~~5~~ | ~~Manual URL Flow~~ | ~~Bot listens for URLs, /run command via n8n webhook~~ | ~~2-3h~~ |
 | ~~6~~ | ~~Storage + Pipeline~~ | ~~`jobs` table, saved jobs button with interaction~~ | ~~1-2h~~ |
-| **7** | **LinkedIn Source** | **Add LinkedIn as a job source (scraping — risky)** | **2-3h** |
+| ~~7~~ | ~~LinkedIn Source~~ | ~~Add LinkedIn as a job source via python-jobspy~~ | ~~2-3h~~ |
 | _Future_ | _Daily Digest + Deploy_ | _7am cron, batch digest, deploy to Hetzner_ | _2h_ |
 
 **Job Sources by Phase:**
 - Phase 1: Arbeitnow API (free, EU-focused, no auth required)
 - Phase 3: WeWorkRemotely, RemoteOK, Joblyst, RemoteRocketship (wired up)
-- Phase 7: LinkedIn (risky/scraping — active phase)
+- Phase 7: LinkedIn via python-jobspy — AI/LLM search terms only, 60-job cap, rate-limited by LinkedIn at ~10 pages/IP
 
 ---
 
