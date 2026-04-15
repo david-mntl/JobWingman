@@ -109,15 +109,15 @@ MIN_SALARY_EUR = 95_000
 # each item individually. Word counting uses len(text.split()) — the same
 # way the prompt specifies "max N words" and the LLM interprets it.
 VERBOSITY_LIMITS: dict[str, dict] = {
-    "salary_signal":        {"max_words": 15, "kind": "scalar"},
-    "red_flags":            {"max_words": 8,  "kind": "list_item"},
-    "green_flags":          {"max_words": 8,  "kind": "list_item"},
-    "fit_breakdown.strong": {"max_words": 8,  "kind": "list_item"},
-    "fit_breakdown.gaps":   {"max_words": 8,  "kind": "list_item"},
-    "company_snapshot":     {"max_words": 30, "kind": "scalar"},
-    "role_summary":         {"max_words": 10, "kind": "list_item"},
-    "company_benefits":     {"max_words": 5,  "kind": "list_item"},
-    "verdict":              {"max_words": 12, "kind": "scalar"},
+    "salary_signal": {"max_words": 15, "kind": "scalar"},
+    "red_flags": {"max_words": 8, "kind": "list_item"},
+    "green_flags": {"max_words": 8, "kind": "list_item"},
+    "fit_breakdown.strong": {"max_words": 8, "kind": "list_item"},
+    "fit_breakdown.gaps": {"max_words": 8, "kind": "list_item"},
+    "company_snapshot": {"max_words": 30, "kind": "scalar"},
+    "role_summary": {"max_words": 10, "kind": "list_item"},
+    "company_benefits": {"max_words": 5, "kind": "list_item"},
+    "verdict": {"max_words": 12, "kind": "scalar"},
 }
 
 # Expected exact item counts for list fields. Fields not listed here accept
@@ -131,7 +131,7 @@ EXPECTED_LIST_LENGTHS: dict[str, int] = {
 COMPANY_SNAPSHOT_MAX_SENTENCES = 2
 
 # Number of top-scored jobs included in the daily Telegram digest.
-TOP_N_JOBS = 30
+TOP_N_JOBS = 50
 
 # ---------------------------------------------------------------------------
 # Gemini LLM
@@ -176,6 +176,58 @@ GEMINI_API_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models"
     "/{model}:generateContent?key={key}"
 )
+
+# ---------------------------------------------------------------------------
+# OpenRouter LLM (Gemma via google/gemma-4-31b-it:free)
+# ---------------------------------------------------------------------------
+
+# OpenRouter model slug. Free variants carry a `:free` suffix and route
+# through whichever underlying provider OpenRouter has available — this is
+# why 502/503 responses are more common here than with a direct Google call.
+OPENROUTER_MODEL = "google/gemma-4-31b-it:free"
+
+# OpenAI-compatible chat-completions endpoint. Kept as a fixed URL (no
+# {model}/{key} templating) because the model goes in the JSON body and the
+# key goes in the Authorization header — nothing is substituted into the URL.
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+# Matches Gemini's token budget so the scoring JSON has the same headroom
+# across providers. 4096 is comfortably above the full response size.
+OPENROUTER_MAX_OUTPUT_TOKENS = 4096
+
+# Per-request HTTP timeout. 60s matches Gemini — large CV + job description
+# prompts can take noticeable time, and Gemma on free-tier providers is not
+# always fast.
+OPENROUTER_TIMEOUT_SECONDS = 60
+
+# Delay between consecutive OpenRouter calls. Free tier allows ~20 req/min
+# per account; a 4-second gap caps us at 15 req/min, leaving headroom for
+# retries without tripping 429.
+OPENROUTER_DELAY_BETWEEN_CALLS = 4
+
+# Retry budget for HTTP 429 (rate limit).
+OPENROUTER_MAX_RETRIES = 3
+
+# Base delay in seconds for exponential backoff on 429 responses.
+# Retry 1 waits 10s, retry 2 waits 20s, retry 3 waits 40s.
+OPENROUTER_RETRY_BASE_DELAY = 10
+
+# Retry budget for HTTP 502/503 (upstream provider unavailable). Kept
+# separate from 429 so both counters are independent.
+OPENROUTER_503_MAX_RETRIES = 5
+
+# Base delay for 502/503 backoff. Shorter than 429 because provider
+# unavailability on OpenRouter tends to clear quickly once a different
+# upstream picks up the traffic.
+OPENROUTER_503_RETRY_BASE_DELAY = 3
+
+# Optional HTTP-Referer header. OpenRouter uses it to attribute traffic on
+# the dashboard, which makes it much easier to spot which app burned the
+# free-tier quota when debugging 402/429 later.
+OPENROUTER_HTTP_REFERER = "https://github.com/jobwingman"
+
+# Optional X-Title header — shown in the OpenRouter dashboard next to usage.
+OPENROUTER_APP_NAME = "JobWingman"
 
 # ---------------------------------------------------------------------------
 # Deduplication

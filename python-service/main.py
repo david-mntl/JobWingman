@@ -30,7 +30,7 @@ from pydantic import BaseModel
 
 from constants import CV_PATH
 from logger import get_logger
-from llm import GeminiClient
+from llm import GeminiClient, OpenRouterGemmaClient
 from job_sources.url_scraper import analyze_url
 from pipeline.orchestrator import run_pipeline
 from storage.database import (
@@ -113,7 +113,9 @@ app = FastAPI(title="JobWingman", version="0.1.0", lifespan=lifespan)
 
 # Instantiated once at module level — fails fast at startup if GEMINI_API_KEY
 # is missing. Passed into every pipeline run via run_pipeline().
-_llm_client = GeminiClient(api_key=os.environ.get("GEMINI_API_KEY", ""))
+# _llm_client = GeminiClient(api_key=os.environ.get("GEMINI_API_KEY", ""))
+
+_llm_client = OpenRouterGemmaClient(api_key=os.environ.get("OPENROUTER_API_KEY", ""))
 
 
 # ---------------------------------------------------------------------------
@@ -146,7 +148,9 @@ async def _send_telegram_with_markup(text: str, reply_markup: dict) -> None:
     error handling for the two send paths.
     """
     try:
-        await send_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, text, reply_markup=reply_markup)
+        await send_message(
+            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, text, reply_markup=reply_markup
+        )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
