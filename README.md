@@ -29,7 +29,24 @@ And honestly, the best part is that it *works*. A short, curated list of genuine
 
 ## What it looks like in action
 
-> _Screenshots go here — daily digest in Telegram, URL analysis flow, and saved-jobs list. (Placeholder — I'll drop them in shortly.)_
+### After triggering a manual run
+
+<img width="517" height="674" alt="image" src="https://github.com/user-attachments/assets/86065749-0661-46d5-8ec1-e22c9ec2c5e2" />
+
+<img width="477" height="709" alt="image" src="https://github.com/user-attachments/assets/d953c25b-aecd-4bd9-bde8-d14f9118d9e5" />
+
+### List saved jobs
+
+<img width="729" height="715" alt="image" src="https://github.com/user-attachments/assets/907ee847-47f0-4ba5-aa8c-f6ef7b977038" />
+
+### Specific job analyze
+
+<img width="793" height="896" alt="image" src="https://github.com/user-attachments/assets/b3d77a7b-94d4-4706-93b5-0c0b16e328bb" />
+
+### Saving an interesting job
+
+<img width="793" height="896" alt="image" src="https://github.com/user-attachments/assets/450a5f2e-4e6c-4773-90e1-bcb8cee640e8" />
+
 
 **A typical Telegram card:**
 
