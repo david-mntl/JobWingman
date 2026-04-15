@@ -226,7 +226,14 @@ async def fetch_jobs() -> list[Job]:
         *[asyncio.to_thread(_scrape_term, term) for term in LINKEDIN_SEARCH_TERMS]
     )
 
-    seen_urls: set[str] = set()
+    # In-source dedup key = (normalized title, normalized company). URL-only
+    # dedup is insufficient because LinkedIn cross-posts identical roles under
+    # different city URLs (e.g. the same "AI/ML Engineer - Remote @ YO IT
+    # Consulting" posting appears once per city targeted). Collapsing by
+    # (title, company) locally keeps our 60-result budget spent on distinct
+    # roles. The orchestrator's global MD5(title|company) dedup will re-run
+    # the same check across all sources — this local pass just saves budget.
+    seen_keys: set[tuple[str, str]] = set()
     all_jobs: list[Job] = []
 
     for term, df in zip(LINKEDIN_SEARCH_TERMS, dataframes):
@@ -235,18 +242,25 @@ async def fetch_jobs() -> list[Job]:
             continue
 
         term_jobs = 0
+        dropped_dupes = 0
         for _, row in df.iterrows():
-            url = str(_cell(row, "job_url")).strip()
-            if not url or url in seen_urls:
+            job = _normalize(row)
+            if not job.title or not job.url:
                 continue
-            seen_urls.add(url)
-            all_jobs.append(_normalize(row))
+            key = (job.title.lower().strip(), job.company.lower().strip())
+            if key in seen_keys:
+                dropped_dupes += 1
+                continue
+            seen_keys.add(key)
+            all_jobs.append(job)
             term_jobs += 1
 
         logger.info(
-            "[linkedin] term=%r → %d jobs (%d unique across terms so far)",
+            "[linkedin] term=%r → %d unique jobs (dropped %d cross-post dupes, "
+            "%d unique across terms so far)",
             term,
             term_jobs,
+            dropped_dupes,
             len(all_jobs),
         )
 
