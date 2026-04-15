@@ -1,7 +1,7 @@
 """
 JobWingman — OpenRouter/Gemma connectivity test.
 
-Standalone script (run: `python -m llm.test_openrouter_connectivity` from
+Standalone script (run: `python -m llm.openrouter.test_connectivity` from
 inside python-service/) that exercises exactly the failure modes that hurt
 us with Gemini — so the first time something breaks with Gemma we get a
 clear, named diagnosis instead of a mystery traceback.
@@ -46,13 +46,14 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-# When invoked as `python -m llm.test_openrouter_connectivity` from the
+# When invoked as `python -m llm.openrouter.test_connectivity` from the
 # python-service directory the imports below resolve naturally. When run as
-# a plain script path, we fall back to injecting the parent directory so
+# a plain script path, we fall back to injecting the python-service directory
+# (this file sits three levels down: python-service/llm/openrouter/…) so
 # `from constants import ...` still works without requiring the caller to
 # know about PYTHONPATH.
 if __package__ is None or __package__ == "":
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import httpx
 
@@ -226,7 +227,8 @@ async def main() -> int:
     # manually when running the script outside the FastAPI app.
     try:
         from dotenv import load_dotenv
-        for candidate in (Path.cwd() / ".env", Path(__file__).resolve().parents[2] / ".env"):
+        # parents[3] of this file = repo root (python-service/llm/openrouter/file.py).
+        for candidate in (Path.cwd() / ".env", Path(__file__).resolve().parents[3] / ".env"):
             if candidate.exists():
                 load_dotenv(candidate)
                 print(f"[setup] loaded env from {candidate}")

@@ -178,7 +178,7 @@ Returns your current `usage`, `limit`, and whether BYOK is active.
 
 Run the connectivity test:
 ```bash
-cd python-service && python -m llm.test_openrouter_connectivity
+cd python-service && python -m llm.openrouter.test_connectivity
 ```
 
 Tail logs for OpenRouter-only events:

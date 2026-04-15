@@ -47,7 +47,7 @@ from constants import (
 )
 from logger import get_logger
 
-from .base import LLMClient
+from ..base import LLMClient
 
 logger = get_logger(__name__)
 
