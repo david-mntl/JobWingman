@@ -28,6 +28,7 @@ from logger import get_logger
 from models.job import Job
 from job_sources.arbeitnow import fetch_jobs as fetch_arbeitnow
 from job_sources.joblyst import fetch_jobs as fetch_joblyst
+from job_sources.linkedin import fetch_jobs as fetch_linkedin
 from job_sources.remoteok import fetch_jobs as fetch_remoteok
 from job_sources.remoterocketship import fetch_jobs as fetch_remoterocketship
 from job_sources.weworkremotely import fetch_jobs as fetch_wwr
@@ -50,6 +51,7 @@ _FETCHERS = [
     fetch_wwr,
     fetch_remoteok,
     fetch_arbeitnow,
+    fetch_linkedin,
 ]
 
 
