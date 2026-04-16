@@ -96,13 +96,22 @@ Tapping 💾 on any card sends a Telegram callback; the bot looks the job up in 
         │                                                              │
         │   ┌──────────────┐   ┌─────────────┐   ┌─────────────────┐   │
         │   │ Job sources  │──▶│  Pipeline   │──▶│  LLM scoring    │   │
-        │   │ (5 fetchers) │   │ dedup+filter│   │ (Gemini/Gemma)  │   │
-        │   └──────────────┘   └─────────────┘   └─────────────────┘   │
-        │                          │                       │           │
-        │                          ▼                       ▼           │
-        │                     ┌───────────────────────────────┐        │
-        │                     │ SQLite: seen / saved / pending│        │
-        │                     └───────────────────────────────┘        │
+        │   │ (5 fetchers) │   │ dedup+filter│   │   (see below)   │   │
+        │   └──────────────┘   └─────────────┘   └────────┬────────┘   │
+        │                          │                      │            │
+        │                          ▼                      ▼            │
+        │                     ┌───────────────────┐  ┌──────────────┐  │
+        │                     │ SQLite            │  │ LLM factory  │  │
+        │                     │ seen/saved/pending│  │ Gemma (def.) │  │
+        │                     └───────────────────┘  │ Gemini (alt.)│  │
+        │                                            └──────┬───────┘  │
+        │                                                   │          │
+        │                                     ┌─────────────┴────────┐ │
+        │                                     ▼                      ▼ │
+        │                             ┌────────────────┐   ┌─────────┐ │
+        │                             │ OpenRouter API │   │ Gemini  │ │
+        │                             │ (gemma:free)   │   │  API    │ │
+        │                             └────────────────┘   └─────────┘ │
         └──────────────────────────────────────────────────────────────┘
                      ▲
                      │ HTTP trigger (cron)
@@ -120,7 +129,7 @@ fetch (5 sources, concurrent)  →  dedup (MD5, 30-day window)
       ↓
 hard discard (keyword filter, zero LLM cost)
       ↓
-LLM scoring (Gemini or Gemma — CV + job + my priorities)
+LLM scoring (Gemma via OpenRouter by default, Gemini as fallback — CV + job + my priorities)
       ↓
 sort by match_score  →  top N  →  Telegram
 ```
@@ -256,8 +265,12 @@ JobWingman/
 │   │   ├── weworkremotely.py
 │   │   └── url_scraper.py          # paste-a-URL flow (HTML → LLM extraction → score)
 │   ├── llm/                        # provider-agnostic client
-│   │   ├── base.py                 # LLMClient ABC
-│   │   └── gemini.py               # Gemini implementation w/ retries
+│   │   ├── base.py                 # LLMClient ABC — single generate() method
+│   │   ├── factory.py              # LLM_PROVIDER env → concrete client (dict dispatch)
+│   │   ├── gemini/
+│   │   │   └── client.py           # Gemini implementation w/ retries
+│   │   └── openrouter/
+│   │       └── gemma.py            # google/gemma-4-31b-it:free via OpenRouter (default)
 │   ├── pipeline/
 │   │   ├── orchestrator.py         # fetch → dedup → filter → score → top N
 │   │   ├── filters.py              # hard-discard (zero-token pre-filter)
@@ -339,7 +352,7 @@ Later, when the mood strikes:
 
 If you're poking around the code, the spots I spent most of my time on — and that are probably the most interesting read — are:
 
-- [python-service/llm/gemini.py](python-service/llm/gemini.py) — retry logic with independent counters per error type, so one slow endpoint doesn't burn the budget for another.
+- [python-service/llm/gemini/client.py](python-service/llm/gemini/client.py) and [python-service/llm/openrouter/gemma.py](python-service/llm/openrouter/gemma.py) — the two concrete providers, both with retry logic and independent counters per error type. Selected at startup by [python-service/llm/factory.py](python-service/llm/factory.py) from the `LLM_PROVIDER` env var.
 - [python-service/eval/](python-service/eval/) together with the `_SCORING_PROMPT_TEMPLATE` in [python-service/pipeline/scoring.py](python-service/pipeline/scoring.py) — the prompt itself, and the harness that keeps it honest across versions.
 - [python-service/telegram/bot.py](python-service/telegram/bot.py) — every external dependency is injected as a callback, zero circular imports.
 - [python-service/main.py](python-service/main.py) — deliberately thin FastAPI controller; all pipeline behaviour lives in [python-service/pipeline/](python-service/pipeline/).
