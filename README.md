@@ -29,7 +29,32 @@ And honestly, the best part is that it *works*. A short, curated list of genuine
 
 ## What it looks like in action
 
-> _Screenshots go here — daily digest in Telegram, URL analysis flow, and saved-jobs list. (Placeholder — I'll drop them in shortly.)_
+### After triggering a manual run
+
+Sending `/run` to the bot kicks off the full pipeline on demand. The first screenshot shows the bot acknowledging the trigger and streaming the run-summary footer (`X scanned → Y passed → Z worth your time`). The second is one of the resulting job cards — match score, green/red flags, role bullets, company snapshot, and the 💾 Save button, rendered exactly as described above.
+
+<img width="517" height="674" alt="Telegram chat showing the /run command acknowledgement followed by the scanned/passed/worth-your-time digest footer" src="https://github.com/user-attachments/assets/86065749-0661-46d5-8ec1-e22c9ec2c5e2" />
+
+<img width="477" height="709" alt="A single rich job card from the digest: role title, company, match score, green and red flags, role bullets, strengths and gaps, benefits, verdict, and a Save button" src="https://github.com/user-attachments/assets/d953c25b-aecd-4bd9-bde8-d14f9118d9e5" />
+
+### List saved jobs
+
+`/list-jobs` returns every role I've tapped 💾 on, as a compact list with one row per saved job and a link back to the original posting. This is my "weekend review" view — during the week I save aggressively, and on Sunday I open this and actually apply.
+
+<img width="729" height="715" alt="Telegram output of the /list-jobs command: a numbered list of previously saved roles with company, title, and link to the posting" src="https://github.com/user-attachments/assets/907ee847-47f0-4ba5-aa8c-f6ef7b977038" />
+
+### Specific job analyze
+
+Pasting any job URL directly into the chat triggers the on-demand flow: the bot scrapes the page, extracts the fields via the LLM, scores the result against my CV, and sends back the same card format as the digest. Zero context-switching between "daily" and "I just saw this on LinkedIn".
+
+<img width="793" height="896" alt="Bot response to a pasted job URL: an Analyzing... status followed by a full scored card in the same format as the daily digest" src="https://github.com/user-attachments/assets/b3d77a7b-94d4-4706-93b5-0c0b16e328bb" />
+
+### Saving an interesting job
+
+Tapping 💾 on any card sends a Telegram callback; the bot looks the job up in the `pending_jobs` SQLite table by hash, inserts it into `saved_jobs`, and edits the message to confirm. The screenshot captures the post-tap confirmation — and because the lookup is SQLite-backed (not in-memory), the button still works the next morning even if the service was restarted overnight.
+
+<img width="793" height="896" alt="Job card after tapping the Save button, showing a confirmation that the job was stored in saved_jobs" src="https://github.com/user-attachments/assets/450a5f2e-4e6c-4773-90e1-bcb8cee640e8" />
+
 
 **A typical Telegram card:**
 
@@ -41,7 +66,7 @@ And honestly, the best part is that it *works*. A short, curated list of genuine
 
 📝 Role: build agent orchestration · integrate tool use · ship to prod
 🏢 Acme is a 40-person EU startup building an agentic copilot for data teams.
-✅ Strong: distributed systems, LLM pipelines, Docker | ⚡ Gaps: deep Python
+✅ Strong: distributed systems, LLM pipelines, Docker | ⚡ Gaps: production Kubernetes
 🎁 €5k learning budget, ESOP, Deutschlandticket
 
 💬 Clear AI focus, real product, remote-first — apply today.
@@ -71,7 +96,7 @@ And honestly, the best part is that it *works*. A short, curated list of genuine
         │                                                              │
         │   ┌──────────────┐   ┌─────────────┐   ┌─────────────────┐   │
         │   │ Job sources  │──▶│  Pipeline   │──▶│  LLM scoring    │   │
-        │   │ (5 fetchers) │   │ dedup+filter│   │  (Gemini API)   │   │
+        │   │ (5 fetchers) │   │ dedup+filter│   │ (Gemini/Gemma)  │   │
         │   └──────────────┘   └─────────────┘   └─────────────────┘   │
         │                          │                       │           │
         │                          ▼                       ▼           │
@@ -95,7 +120,7 @@ fetch (5 sources, concurrent)  →  dedup (MD5, 30-day window)
       ↓
 hard discard (keyword filter, zero LLM cost)
       ↓
-LLM scoring (Gemini — CV + job + my priorities)
+LLM scoring (Gemini or Gemma — CV + job + my priorities)
       ↓
 sort by match_score  →  top N  →  Telegram
 ```
@@ -110,10 +135,10 @@ Job sources currently wired up: **Joblyst**, **RemoteRocketship**, **WeWorkRemot
 |-------|--------|-----|
 | API | **FastAPI** + `uvicorn` | Async-native, tiny, auto OpenAPI at `/docs`. |
 | HTTP client | **httpx** (async) | Plays nicely with the event loop so source fetches run concurrently via `asyncio.gather`. |
-| LLM | **Gemini** (free tier) | Free tier is generous enough for daily scoring of ~50 jobs. The client is abstracted behind an `LLMClient` base class — swapping in Claude or OpenAI is one file. |
+| LLM | **Gemma** (default) or **Gemini** — both free tier | The project launched Gemini-only; I added **Gemma via OpenRouter** (`google/gemma-4-31b-it:free`) after Gemini's free tier started throwing sustained 503s. Both providers sit behind the same `LLMClient` interface, so switching is a one-line `LLM_PROVIDER=` flip in `.env`. |
 | Storage | **SQLite** | Zero infrastructure. Single file, `sqlite3` from stdlib. Intentional: when this merges into my other project (DailyLifeMate), it'll graduate to Postgres. |
 | HTML scraping | **BeautifulSoup** + `lxml` | For the paste-a-URL flow — the LLM extracts the job fields from cleaned page text, so I don't have to maintain a parser per job board. |
-| Orchestration | **n8n** (Docker) | Owns the 7am cron and the `/run` webhook. Two reasons behind the choice: I wanted hands-on time with n8n, and I liked keeping the triggering layer physically separated from the Python service. Worth being explicit though — nothing here *needs* n8n. The same scheduling could be done with `APScheduler` or a plain cron entry inside the Python service, with zero impact on the pipeline. It's an optional seam, kept for learning and separation of concerns. |
+| Orchestration | **n8n** (Docker) | Owns the 7am cron and the `/run` webhook — keeps the triggering layer physically separated from the Python service, and gave me hands-on time with n8n. |
 | Interface | **Telegram Bot API** (long-polling) | Works from localhost with no public URL. Dead-simple UX: I already live in Telegram. |
 | Packaging | **Docker Compose** | One `docker compose up` and the whole stack is running: Python service, n8n, bot. |
 
@@ -131,11 +156,15 @@ Every job runs through a cheap keyword filter **before** any LLM call. Consultin
 
 Why it matters: LLM cost scales with the data flow and processing. If you're scoring 300 jobs a day on a free tier, you want to eliminate the 80% of obvious rejects in microseconds, not burn tokens on them.
 
-### 2. Provider-agnostic LLM client
+### 2. Provider-agnostic LLM client — that actually earned its keep
 
-[python-service/llm/base.py](python-service/llm/base.py) defines an abstract `LLMClient` with one method: `generate(prompt) -> str`. The scoring module depends only on that interface. Gemini-specific concerns (payload shape, 429/503/timeout retries with independent counters, URL-based auth) are all sealed inside [python-service/llm/gemini.py](python-service/llm/gemini.py).
+[python-service/llm/base.py](python-service/llm/base.py) defines an abstract `LLMClient` with one method: `generate(prompt) -> str`. The scoring module depends only on that interface. Provider-specific concerns (payload shape, 429/503/timeout retries with independent counters, auth mechanics) are sealed inside each concrete subclass.
 
-Swapping models means writing a new subclass, not touching business logic.
+**The project started Gemini-only.** That worked fine until Gemini's free tier started returning sustained 503s — sometimes for hours at a time — and the morning digest would reliably fail on the days I most wanted it to work. Rather than paper over it with bigger retry budgets, I added a second provider: **Google Gemma** served through the OpenRouter free tier (model `google/gemma-4-31b-it:free`), a mostly independent availability pool. New subclass, same `LLMClient` interface, zero changes to the pipeline, filters, or scoring prompt.
+
+Selection is done at startup by [python-service/llm/factory.py](python-service/llm/factory.py), which maps the `LLM_PROVIDER` env var (`gemini` or `gemma`) to the right concrete client. Gemma is the current default; Gemini is one `.env` line away.
+
+This is the kind of decision where the abstraction felt over-engineered on day one and paid for itself some time later.
 
 ### 3. Fault-tolerant multi-source aggregation
 
@@ -156,11 +185,48 @@ This is the piece I'm happiest with. Prompt engineering without measurement is v
 
 Every prompt edit bumps `PROMPT_VERSION` in [python-service/constants.py](python-service/constants.py), and reports are grouped by version. I can answer "did v2.0 actually improve over v1.4?" with data.
 
-Run it from the host:
+Run it via [python-service/eval/run_eval.sh](python-service/eval/run_eval.sh) — one script, works from any directory, auto-detects whether it's inside the dev container (runs Python directly) or on the host (delegates to `docker-compose.eval.yml`):
+
 ```bash
-docker compose -f docker-compose.eval.yml run --rm eval-runner            # full mode
-docker compose -f docker-compose.eval.yml run --rm eval-runner --no-judge # fast mode
+./python-service/eval/run_eval.sh                           # full mode (score + judge)
+./python-service/eval/run_eval.sh --no-judge                # fast mode (score only)
+./python-service/eval/run_eval.sh --fixture f004            # a single fixture
+./python-service/eval/run_eval.sh --fixture f004 --no-judge # single fixture, fast
 ```
+
+Reports are written to `python-service/eval/test_results/` and grouped by prompt version.
+
+**A typical report looks like this** *(excerpt from `v2.0_2026-04-13_080120.md`)*:
+
+<!-- TODO: replace with a screenshot of a recent eval report run -->
+
+
+```markdown
+# Eval Report — v2.0 — 2026-04-13 08:01:20
+Mode: **full**
+
+## Summary
+- Fixtures run: 15 | Passed: 13 | Failed: 2
+- Avg score delta from expected midpoint: 0.50
+- Judge avg quality score: 4.2 / 5.0
+- Prompt version: v2.0
+
+| ID   | Label                                                        | Expected     | Actual       | Status | Judge |
+|------|--------------------------------------------------------------|--------------|--------------|--------|-------|
+| f001 | Senior LLM Engineer — 100% remote, strong AI focus           | 8.5–10.0     | 9.5          | ✅     | 5/5   |
+| f004 | AI Engineer — hybrid 3 days/week in office (penalty zone)    | 6.0–7.0      | 6.5          | ✅     | 5/5   |
+| f008 | IT Consultant — body leasing / outsourcing (hard discard)    | hard_discard | hard discard | ✅     | —     |
+| f011 | ML Research Scientist — PhD-level model training (discard)   | < 5.9        | discarded    | ✅     | 5/5   |
+| f014 | AI Engineer — salary explicitly below €95k threshold         | < 0.1        | discarded    | ❌     | 1/5   |
+
+### ❌ f014 — Failed fixture detail
+**Judge verdict:** The scoring result was not provided, and the system failed to
+apply the mandatory salary-based discard rule.
+**Judge issues:** Missing scoring result; mandatory salary-based discard
+(hard minimum €95k vs €65–80k offer) not triggered.
+```
+
+That last row is the kind of thing I'd miss on eyeballing alone, the score band passed, but the judge flagged the discard reason as wrong. This is why the judge acts as a gate, not a diagnostic.
 
 ### 5. Restart-safe Telegram buttons
 
@@ -218,7 +284,7 @@ JobWingman/
 
 ## Getting started
 
-You'll need Docker, a Telegram bot token, your Telegram chat ID, and a Gemini API key.
+You'll need Docker, a Telegram bot token, your Telegram chat ID, and an LLM API key — either an **OpenRouter** key (for the default Gemma provider) or a **Gemini** key.
 
 1. **Clone and copy the env file.**
    ```bash
@@ -226,7 +292,7 @@ You'll need Docker, a Telegram bot token, your Telegram chat ID, and a Gemini AP
    cd JobWingman
    cp .env.example .env
    ```
-2. **Fill in `.env`** with your Telegram bot token (from `@BotFather`), chat ID (from `/getUpdates`), Gemini API key, and the n8n webhook URL (`http://n8n:5678/webhook/trigger-digest` is the default).
+2. **Fill in `.env`** with your Telegram bot token (from `@BotFather`), chat ID (from `/getUpdates`), the LLM provider you want (`LLM_PROVIDER=gemma` — the default — or `LLM_PROVIDER=gemini`) and the matching API key (`OPENROUTER_API_KEY` from [openrouter.ai/keys](https://openrouter.ai/keys), or `GEMINI_API_KEY` from [aistudio.google.com](https://aistudio.google.com/app/apikey)), and the n8n webhook URL (`http://n8n:5678/webhook/trigger-digest` is the default).
 3. **Drop your CV** as plain text into [python-service/data/cv.txt](python-service/data/cv.txt). It's loaded once at startup and injected into every scoring prompt.
 4. **Start the stack.**
    ```bash
@@ -237,18 +303,17 @@ You'll need Docker, a Telegram bot token, your Telegram chat ID, and a Gemini AP
    - `/list-jobs` — see everything you've saved
    - paste a job URL — get an instant scored card
 
-
 ### Running the eval suite
 
-Go inside ```python-service/eval``` directory
+One script does everything — it auto-detects host vs container and delegates to `docker-compose.eval.yml` when you're on the host, so you don't need a local Python install:
 
 ```bash
-./run_eval.sh
-./run_eval.sh --no-judge     # run without judge (faster)
-./run_eval.sh --fixture f004 # single test
+./python-service/eval/run_eval.sh                           # full mode (score + judge)
+./python-service/eval/run_eval.sh --no-judge                # fast mode (score only)
+./python-service/eval/run_eval.sh --fixture f004            # a single fixture
 ```
 
-Reports are written to `python-service/eval/test_results/` grouped by prompt version.
+Reports land in `python-service/eval/test_results/` grouped by prompt version.
 
 ---
 
@@ -256,9 +321,12 @@ Reports are written to `python-service/eval/test_results/` grouped by prompt ver
 
 Everything described above runs today — the five job sources with cross-source dedup, the hard-discard pre-filter, the full LLM scoring engine with its eval harness, rich Telegram cards with save buttons, and the paste-a-URL on-demand flow. The whole pipeline is what I use personally, every morning.
 
-A few things I may add later, when the mood strikes:
+**In progress:**
 
-- **LinkedIn as another source** — scraping-based, so it needs care.
+- **LinkedIn as another source** — scraping-based, so it needs care. Current active phase (`feature/add_linkedin`).
+
+Later, when the mood strikes:
+
 - **Merge into DailyLifeMate** — swap SQLite for Postgres and expose the pipeline through my existing C# API and React dashboard.
 
 **Optional:**
