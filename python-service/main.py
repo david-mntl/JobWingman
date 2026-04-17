@@ -28,9 +28,13 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from constants import CV_PATH
+from constants import (
+    CV_PATH,
+    LLM_PROVIDER_DEFAULT,
+    LLM_PROVIDER_ENV_VAR,
+)
 from logger import get_logger
-from llm import GeminiClient
+from llm import build_llm_client
 from job_sources.url_scraper import analyze_url
 from pipeline.orchestrator import run_pipeline
 from storage.database import (
@@ -111,9 +115,13 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="JobWingman", version="0.1.0", lifespan=lifespan)
 
 
-# Instantiated once at module level — fails fast at startup if GEMINI_API_KEY
-# is missing. Passed into every pipeline run via run_pipeline().
-_llm_client = GeminiClient(api_key=os.environ.get("GEMINI_API_KEY", ""))
+# Instantiated once at module level via the factory so the provider is
+# selected from the LLM_PROVIDER env var (falling back to LLM_PROVIDER_DEFAULT
+# when unset). Swapping between Gemini and Gemma is now an env-var change,
+# not a code edit. Passed into every pipeline run via run_pipeline().
+_llm_provider = os.environ.get(LLM_PROVIDER_ENV_VAR, LLM_PROVIDER_DEFAULT)
+_llm_client = build_llm_client(_llm_provider)
+logger.info("[startup] LLM provider = %s", _llm_provider)
 
 
 # ---------------------------------------------------------------------------
@@ -146,7 +154,9 @@ async def _send_telegram_with_markup(text: str, reply_markup: dict) -> None:
     error handling for the two send paths.
     """
     try:
-        await send_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, text, reply_markup=reply_markup)
+        await send_message(
+            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, text, reply_markup=reply_markup
+        )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 

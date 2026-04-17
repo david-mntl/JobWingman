@@ -91,7 +91,7 @@ def get_logger(name: str) -> logging.Logger:
     Args:
         name: Typically pass __name__ from the calling module.
               pipeline/orchestrator.py → jobwingman.pipeline.orchestrator
-              llm/gemini.py           → jobwingman.llm.gemini
+              llm/gemini/client.py    → jobwingman.llm.gemini.client
               job_sources/arbeitnow.py → jobwingman.job_sources.arbeitnow
 
     The returned logger inherits level and handler from the root app logger.

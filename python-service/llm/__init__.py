@@ -1,12 +1,25 @@
 """
 JobWingman — LLM client package.
 
-Exports the abstract interface and the active Gemini implementation.
-To add a new provider, create a new module in this package (e.g.
-claude.py), subclass LLMClient, and swap the instantiation in main.py.
+Exports the abstract interface, every concrete implementation, and the
+factory used to build the client from a provider name. Callers should
+prefer build_llm_client() over direct instantiation so provider selection
+stays in one place.
+
+Implementations:
+  GeminiClient            — Google Gemini via generateContent API.
+  OpenRouterGemmaClient   — Google Gemma via OpenRouter (chat-completions).
 """
 
 from .base import LLMClient
+from .factory import build_llm_client
 from .gemini import GeminiClient
+from .openrouter import OpenRouterGemmaClient, OpenRouterGemmaError
 
-__all__ = ["LLMClient", "GeminiClient"]
+__all__ = [
+    "LLMClient",
+    "GeminiClient",
+    "OpenRouterGemmaClient",
+    "OpenRouterGemmaError",
+    "build_llm_client",
+]
