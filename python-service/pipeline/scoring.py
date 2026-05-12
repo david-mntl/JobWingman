@@ -282,10 +282,11 @@ async def score_jobs(jobs: list[Job], cv: str, llm_client: LLMClient) -> list[Jo
     The delay is applied *between* calls (not after the last one) to avoid
     an unnecessary trailing sleep when the batch is done.
 
-    If any job fails to score (LLM error, network error, parse error), the
-    exception is NOT caught here — it propagates to the caller. The LLM is
-    the core of the pipeline; silently returning zero results is worse than
-    failing loudly with one clear error message.
+    If a single job fails to score (LLM error, network error, parse error
+    from a truncated JSON response, etc.), the exception is caught, logged
+    with full context, and that one job is skipped. The batch continues
+    with the next job. One bad response — for example, a model that
+    truncated its JSON mid-output — must not abort the entire run.
 
     Args:
         jobs:       List of normalised job dicts to score.
@@ -293,12 +294,30 @@ async def score_jobs(jobs: list[Job], cv: str, llm_client: LLMClient) -> list[Jo
         llm_client: Provider-agnostic LLM client used to call the model.
     """
     results = []
+    failed = 0
     for i, job in enumerate(jobs):
         if i > 0:
             await asyncio.sleep(llm_client.delay_between_calls)
-        result = await score_job(job, cv, llm_client)
+        try:
+            result = await score_job(job, cv, llm_client)
+        except Exception as exc:
+            failed += 1
+            logger.error(
+                "[scoring] FAILED — %s @ %s | %s: %s",
+                job.title,
+                job.company,
+                type(exc).__name__,
+                exc,
+                exc_info=True,
+            )
+            continue
         if result is not None:
             results.append(result)
 
-    logger.info("[scoring] %d in → %d passed scoring", len(jobs), len(results))
+    logger.info(
+        "[scoring] %d in → %d passed scoring (%d failed)",
+        len(jobs),
+        len(results),
+        failed,
+    )
     return results
